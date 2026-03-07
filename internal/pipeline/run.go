@@ -95,7 +95,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		completedStages = checkpointCompletedStages(summary)
 	}
 
-	logf, closeLog, err := initLogger(cfg.OutputDir, cfg.Verbose, appendLog)
+	logf, diagf, closeLog, err := initLogger(cfg.OutputDir, cfg.Verbose, cfg.EnableDiagnostics, appendLog)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		if err := stage("passive_collection", func() error {
 			pCtx, cancel := context.WithTimeout(ctx, cfg.PassiveTimeout)
 			defer cancel()
-			passiveHosts = runPassiveCollection(pCtx, cfg, store, &toolErrs, logf)
+			passiveHosts, summary.PassiveDiagnostics = runPassiveCollection(pCtx, cfg, store, &toolErrs, logf, diagf)
 			summary.PassiveDiscovered = len(passiveHosts)
 			return nil
 		}); err != nil {
@@ -655,7 +655,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 	return summary, nil
 }
 
-func initLogger(outputDir string, verbose bool, appendMode bool) (func(string, ...any), func(), error) {
+func initLogger(outputDir string, verbose bool, diagnostics bool, appendMode bool) (func(string, ...any), func(string, ...any), func(), error) {
 	logPath := filepath.Join(outputDir, "ultrarecon.log")
 	var (
 		f   *os.File
@@ -667,7 +667,7 @@ func initLogger(outputDir string, verbose bool, appendMode bool) (func(string, .
 		f, err = os.Create(logPath)
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("create log file: %w", err)
+		return nil, nil, nil, fmt.Errorf("create log file: %w", err)
 	}
 	logger := log.New(f, "", log.LstdFlags)
 	closeFn := func() {
@@ -680,7 +680,14 @@ func initLogger(outputDir string, verbose bool, appendMode bool) (func(string, .
 			fmt.Println(msg)
 		}
 	}
-	return logf, closeFn, nil
+	diagf := func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		logger.Println(msg)
+		if verbose || diagnostics {
+			fmt.Println(msg)
+		}
+	}
+	return logf, diagf, closeFn, nil
 }
 
 func finalResolvedNames(store *SafeStore) []string {

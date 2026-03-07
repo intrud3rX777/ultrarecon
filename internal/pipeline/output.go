@@ -119,6 +119,11 @@ func writeArtifacts(
 	sort.Strings(live)
 
 	if cfg.FinalOnly {
+		if cfg.EnableDiagnostics && len(summary.PassiveDiagnostics) > 0 {
+			if err := toJSONLines(filepath.Join(output, "passive_diagnostics.jsonl"), passiveDiagnosticRows(summary.PassiveDiagnostics)); err != nil {
+				return err
+			}
+		}
 		if err := util.WriteLines(filepath.Join(output, "final_subdomains.txt"), final); err != nil {
 			return err
 		}
@@ -149,12 +154,17 @@ func writeArtifacts(
 		if err := util.WriteJSON(filepath.Join(output, "summary.json"), summary); err != nil {
 			return err
 		}
-		if err := writeFinalReport(output, cfg.Phase, summary, final, live); err != nil {
+		if err := writeFinalReport(output, cfg, summary, final, live); err != nil {
 			return err
 		}
 		return nil
 	}
 
+	if cfg.EnableDiagnostics && len(summary.PassiveDiagnostics) > 0 {
+		if err := toJSONLines(filepath.Join(output, "00_passive_diagnostics.jsonl"), passiveDiagnosticRows(summary.PassiveDiagnostics)); err != nil {
+			return err
+		}
+	}
 	if err := util.WriteLines(filepath.Join(output, "01_passive_raw.txt"), passive); err != nil {
 		return err
 	}
@@ -231,13 +241,13 @@ func writeArtifacts(
 	if err := util.WriteJSON(filepath.Join(output, "summary.json"), summary); err != nil {
 		return err
 	}
-	if err := writeFinalReport(output, cfg.Phase, summary, final, live); err != nil {
+	if err := writeFinalReport(output, cfg, summary, final, live); err != nil {
 		return err
 	}
 	return nil
 }
 
-func writeFinalReport(output, phase string, summary *Summary, final, live []string) error {
+func writeFinalReport(output string, cfg config.Config, summary *Summary, final, live []string) error {
 	artifacts := []string{
 		"- final_subdomains.txt",
 		"- live_subdomains.txt",
@@ -250,8 +260,14 @@ func writeFinalReport(output, phase string, summary *Summary, final, live []stri
 		"- summary.json",
 	}
 	if summary.FinalOnly {
+		if cfg.EnableDiagnostics && len(summary.PassiveDiagnostics) > 0 {
+			artifacts = append(artifacts, "- passive_diagnostics.jsonl")
+		}
 		artifacts = append(artifacts, "- scored_subdomains.jsonl")
 	} else {
+		if cfg.EnableDiagnostics && len(summary.PassiveDiagnostics) > 0 {
+			artifacts = append(artifacts, "- 00_passive_diagnostics.jsonl")
+		}
 		artifacts = append(artifacts, "- 17_scored.jsonl", "- 19_service_assets.jsonl", "- 20_surface_urls.txt", "- 21_surface_endpoints.jsonl", "- 22_content_paths.jsonl", "- 23_param_keys.txt", "- 24_security_findings.jsonl")
 	}
 
@@ -259,7 +275,7 @@ func writeFinalReport(output, phase string, summary *Summary, final, live []stri
 		"# UltraRecon Final Report",
 		"",
 		fmt.Sprintf("- generated: %s", time.Now().UTC().Format(time.RFC3339)),
-		fmt.Sprintf("- phase: %s", strings.ToLower(strings.TrimSpace(phase))),
+		fmt.Sprintf("- phase: %s", strings.ToLower(strings.TrimSpace(cfg.Phase))),
 		fmt.Sprintf("- domain: %s", summary.Domain),
 		fmt.Sprintf("- duration: %s", summary.Duration),
 		fmt.Sprintf("- final_subdomains: %d", len(final)),
@@ -268,6 +284,22 @@ func writeFinalReport(output, phase string, summary *Summary, final, live []stri
 		"## Final Artifacts",
 	}
 	lines = append(lines, artifacts...)
+	if cfg.EnableDiagnostics {
+		lines = append(lines, "", "## Passive Diagnostics")
+		unusual := unusualPassiveDiagnostics(summary.PassiveDiagnostics)
+		if len(unusual) == 0 {
+			lines = append(lines, "- no passive sources were skipped, failed, or downgraded")
+		} else {
+			for _, diag := range unusual {
+				line := fmt.Sprintf("- %s: status=%s duration=%s", diag.Collector, diag.Status, diag.Duration)
+				if diag.Reason != "" {
+					line += fmt.Sprintf(" reason=%s", diag.Reason)
+				}
+				line += fmt.Sprintf(" raw=%d accepted=%d added=%d", diag.RawCount, diag.Accepted, diag.Added)
+				lines = append(lines, line)
+			}
+		}
+	}
 	return util.WriteLines(filepath.Join(output, "report.md"), lines)
 }
 
@@ -277,6 +309,29 @@ func toJSONLines[T any](path string, rows []T) error {
 		anyRows = append(anyRows, r)
 	}
 	return util.WriteJSONLines(path, anyRows)
+}
+
+func passiveDiagnosticRows(diags []PassiveCollectorDiagnostic) []PassiveCollectorDiagnostic {
+	out := make([]PassiveCollectorDiagnostic, 0, len(diags))
+	out = append(out, diags...)
+	return out
+}
+
+func unusualPassiveDiagnostics(diags []PassiveCollectorDiagnostic) []PassiveCollectorDiagnostic {
+	out := make([]PassiveCollectorDiagnostic, 0, len(diags))
+	for _, diag := range diags {
+		if diag.Status == "completed" {
+			continue
+		}
+		out = append(out, diag)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Status == out[j].Status {
+			return out[i].Collector < out[j].Collector
+		}
+		return out[i].Status < out[j].Status
+	})
+	return out
 }
 
 func (s *SafeStore) setConfidence(name string, score float64) {

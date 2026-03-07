@@ -26,6 +26,7 @@ Each phase can run independently or as part of a full pipeline.
 - Content discovery with `ffuf`
 - Automated security checks with `nuclei`
 - Clean final reports by default
+- Optional passive-source diagnostics with explicit skip, fail, and downgrade reasons
 - Windows and Linux support
 - Auto-install of supported dependencies with `--install-tools`
 - Persistent stage checkpoints with `--resume` and `--resume-from`
@@ -158,12 +159,14 @@ Supported saved entries currently include:
 - Shodan API key
 - CertSpotter API key
 - BufferOver API key
+- Extended optional providers for broader subfinder coverage such as BeVigil, BinaryEdge, C99, FOFA, FullHunt, Hunter, IntelX, LeakIX, Netlas, PassiveTotal, Quake, Robtex, ThreatBook, WhoisXML, and ZoomEye
 
 Behavior:
 
 - Press `Enter` on any prompt to skip it
 - The saved state is reused on later runs
 - UltraRecon writes a `subfinder` `provider-config.yaml` automatically from the answers
+- A second extended-provider section is optional and defaults to skip
 - Use `--setup-force` to rerun the wizard and replace the saved values
 - Use `--setup=false` to disable the prompt for a run
 
@@ -245,6 +248,12 @@ Resume from a specific previously checkpointed stage:
 ./ultrarecon -d example.com --trickest-resolvers=true --max-resolver-pool 1800 --max-resolvers 64
 ```
 
+### Passive Diagnostics
+
+```bash
+./ultrarecon -d example.com --phase subdomains --diagnostics -v
+```
+
 ### Home Network Safe Mode
 
 ```bash
@@ -267,6 +276,7 @@ Resume from a specific previously checkpointed stage:
 - `--install-optional`: also install optional tools
 - `--setup`: enable or disable the first-run provider prompt
 - `--setup-force`: rerun the first-run provider prompt and overwrite saved values
+- `--diagnostics`: print and save passive-source diagnostics
 - `--final-only`: write only final artifacts
 - `--resume`: continue from the latest saved checkpoint in the output directory
 - `--resume-from`: restart from a specific previously checkpointed stage
@@ -311,6 +321,7 @@ By default UltraRecon writes only clean, final artifacts:
 - `content_paths.jsonl`
 - `param_keys.txt`
 - `security_findings.jsonl`
+- `passive_diagnostics.jsonl` when `--diagnostics` is enabled
 - `summary.json`
 - `report.md`
 - `ultrarecon.log`

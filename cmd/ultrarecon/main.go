@@ -121,6 +121,7 @@ func main() {
 	flag.IntVar(&cfg.MaxSecurityFindings, "max-security-findings", cfg.MaxSecurityFindings, "max automated security findings retained")
 	flag.BoolVar(&cfg.EnableHTTPProbe, "http-probe", cfg.EnableHTTPProbe, "enable live http probing")
 	flag.BoolVar(&cfg.StrictValidation, "strict", cfg.StrictValidation, "force stricter multi-resolver validation")
+	flag.BoolVar(&cfg.EnableDiagnostics, "diagnostics", cfg.EnableDiagnostics, "print and save passive-source diagnostics")
 	flag.BoolVar(&cfg.Verbose, "v", cfg.Verbose, "verbose console logs")
 	flag.BoolVar(&cfg.Verbose, "verbose", cfg.Verbose, "verbose console logs")
 	flag.BoolVar(&cfg.HomeSafe, "home-safe", cfg.HomeSafe, "enable conservative home-network safety limits")
@@ -154,8 +155,8 @@ func main() {
 		os.Exit(1)
 	}
 	if cfg.Verbose {
-		fmt.Printf("[verbose] config phase=%s profile=%s home_safe=%v final_only=%v resume=%v resume_from=%s setup=%v setup_force=%v install_tools=%v install_optional=%v\n",
-			cfg.Phase, cfg.Profile, cfg.HomeSafe, cfg.FinalOnly, cfg.Resume, cfg.ResumeFrom, runSetup, forceSetup, installTools, installOptional)
+		fmt.Printf("[verbose] config phase=%s profile=%s home_safe=%v final_only=%v resume=%v resume_from=%s setup=%v setup_force=%v diagnostics=%v install_tools=%v install_optional=%v\n",
+			cfg.Phase, cfg.Profile, cfg.HomeSafe, cfg.FinalOnly, cfg.Resume, cfg.ResumeFrom, runSetup, forceSetup, cfg.EnableDiagnostics, installTools, installOptional)
 		fmt.Printf("[verbose] dns max_resolvers=%d max_pool=%d trickest=%v resolver_fetch_timeout=%s\n",
 			cfg.MaxResolvers, cfg.MaxResolverPool, cfg.EnableTrickestResolvers, cfg.ResolverFetchTimeout)
 		fmt.Printf("[verbose] modules passive=%v noerror=%v dns_pivot=%v asn=%v zone_transfer=%v brute=%v recursive=%v recursive_brute=%v enrichment=%v analytics=%v scraping=%v permutations=%v gotator=%v service=%v surface=%v content=%v security=%v http_probe=%v\n",

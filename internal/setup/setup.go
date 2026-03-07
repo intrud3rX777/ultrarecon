@@ -22,6 +22,23 @@ type ProviderState struct {
 	ShodanAPIKey         string    `json:"shodan_api_key,omitempty"`
 	CertSpotterAPIKey    string    `json:"certspotter_api_key,omitempty"`
 	BufferOverAPIKey     string    `json:"bufferover_api_key,omitempty"`
+	BeVigilAPIKey        string    `json:"bevigil_api_key,omitempty"`
+	BinaryEdgeAPIKey     string    `json:"binaryedge_api_key,omitempty"`
+	C99APIKey            string    `json:"c99_api_key,omitempty"`
+	FOFAEmail            string    `json:"fofa_email,omitempty"`
+	FOFAKey              string    `json:"fofa_key,omitempty"`
+	FullHuntAPIKey       string    `json:"fullhunt_api_key,omitempty"`
+	HunterAPIKey         string    `json:"hunter_api_key,omitempty"`
+	IntelXAPIKey         string    `json:"intelx_api_key,omitempty"`
+	LeakIXAPIKey         string    `json:"leakix_api_key,omitempty"`
+	NetlasAPIKey         string    `json:"netlas_api_key,omitempty"`
+	PassiveTotalUser     string    `json:"passivetotal_user,omitempty"`
+	PassiveTotalKey      string    `json:"passivetotal_key,omitempty"`
+	QuakeAPIKey          string    `json:"quake_api_key,omitempty"`
+	RobtexAPIKey         string    `json:"robtex_api_key,omitempty"`
+	ThreatBookAPIKey     string    `json:"threatbook_api_key,omitempty"`
+	WhoisXMLAPIKey       string    `json:"whoisxmlapi_key,omitempty"`
+	ZoomEyeAPIKey        string    `json:"zoomeye_api_key,omitempty"`
 }
 
 func EnsureFirstRun(enabled, force, verbose bool) (*ProviderState, error) {
@@ -108,6 +125,9 @@ func applyProviderState(state *ProviderState, verbose bool) error {
 			fmt.Printf("[setup] subfinder provider config: %s\n", providerPath)
 		}
 	}
+	if verbose {
+		fmt.Printf("[setup] provider entries loaded: %d\n", providerConfigEntryCount(state))
+	}
 	return nil
 }
 
@@ -158,6 +178,85 @@ func runWizard(state *ProviderState) error {
 		return err
 	}
 	state.BufferOverAPIKey, err = promptValue(reader, "BufferOver API key: ")
+	if err != nil {
+		return err
+	}
+	moreProviders, err := promptYesNo(reader, "Configure extended passive-source provider keys for broader coverage? [y/N]: ", false)
+	if err != nil {
+		return err
+	}
+	if !moreProviders {
+		return nil
+	}
+	state.BeVigilAPIKey, err = promptValue(reader, "BeVigil API key: ")
+	if err != nil {
+		return err
+	}
+	state.BinaryEdgeAPIKey, err = promptValue(reader, "BinaryEdge API key: ")
+	if err != nil {
+		return err
+	}
+	state.C99APIKey, err = promptValue(reader, "C99.nl API key: ")
+	if err != nil {
+		return err
+	}
+	state.FOFAEmail, err = promptValue(reader, "FOFA email: ")
+	if err != nil {
+		return err
+	}
+	if state.FOFAEmail != "" {
+		state.FOFAKey, err = promptValue(reader, "FOFA key: ")
+		if err != nil {
+			return err
+		}
+	}
+	state.FullHuntAPIKey, err = promptValue(reader, "FullHunt API key: ")
+	if err != nil {
+		return err
+	}
+	state.HunterAPIKey, err = promptValue(reader, "Hunter API key: ")
+	if err != nil {
+		return err
+	}
+	state.IntelXAPIKey, err = promptValue(reader, "IntelX API key: ")
+	if err != nil {
+		return err
+	}
+	state.LeakIXAPIKey, err = promptValue(reader, "LeakIX API key: ")
+	if err != nil {
+		return err
+	}
+	state.NetlasAPIKey, err = promptValue(reader, "Netlas API key: ")
+	if err != nil {
+		return err
+	}
+	state.PassiveTotalUser, err = promptValue(reader, "PassiveTotal username or email: ")
+	if err != nil {
+		return err
+	}
+	if state.PassiveTotalUser != "" {
+		state.PassiveTotalKey, err = promptValue(reader, "PassiveTotal key: ")
+		if err != nil {
+			return err
+		}
+	}
+	state.QuakeAPIKey, err = promptValue(reader, "Quake API key: ")
+	if err != nil {
+		return err
+	}
+	state.RobtexAPIKey, err = promptValue(reader, "Robtex API key: ")
+	if err != nil {
+		return err
+	}
+	state.ThreatBookAPIKey, err = promptValue(reader, "ThreatBook API key: ")
+	if err != nil {
+		return err
+	}
+	state.WhoisXMLAPIKey, err = promptValue(reader, "WhoisXML API key: ")
+	if err != nil {
+		return err
+	}
+	state.ZoomEyeAPIKey, err = promptValue(reader, "ZoomEye API key: ")
 	if err != nil {
 		return err
 	}
@@ -248,16 +347,37 @@ func buildSubfinderProviderLines(state *ProviderState) []string {
 			out = append(out, "  - "+yamlQuote(v))
 		}
 	}
+	appendPair := func(name, left, right string) {
+		left = strings.TrimSpace(left)
+		right = strings.TrimSpace(right)
+		if left == "" || right == "" {
+			return
+		}
+		appendList(name, []string{left + ":" + right})
+	}
 	appendList("chaos", singleToList(state.ChaosAPIKey))
 	appendList("github", state.GitHubTokens)
-	if state.CensysAPIID != "" && state.CensysAPISecret != "" {
-		appendList("censys", []string{state.CensysAPIID + ":" + state.CensysAPISecret})
-	}
+	appendPair("censys", state.CensysAPIID, state.CensysAPISecret)
 	appendList("securitytrails", singleToList(state.SecurityTrailsAPIKey))
 	appendList("virustotal", singleToList(state.VirusTotalAPIKey))
 	appendList("shodan", singleToList(state.ShodanAPIKey))
 	appendList("certspotter", singleToList(state.CertSpotterAPIKey))
 	appendList("bufferover", singleToList(state.BufferOverAPIKey))
+	appendList("bevigil", singleToList(state.BeVigilAPIKey))
+	appendList("binaryedge", singleToList(state.BinaryEdgeAPIKey))
+	appendList("c99", singleToList(state.C99APIKey))
+	appendPair("fofa", state.FOFAEmail, state.FOFAKey)
+	appendList("fullhunt", singleToList(state.FullHuntAPIKey))
+	appendList("hunter", singleToList(state.HunterAPIKey))
+	appendList("intelx", singleToList(state.IntelXAPIKey))
+	appendList("leakix", singleToList(state.LeakIXAPIKey))
+	appendList("netlas", singleToList(state.NetlasAPIKey))
+	appendPair("passivetotal", state.PassiveTotalUser, state.PassiveTotalKey)
+	appendList("quake", singleToList(state.QuakeAPIKey))
+	appendList("robtex", singleToList(state.RobtexAPIKey))
+	appendList("threatbook", singleToList(state.ThreatBookAPIKey))
+	appendList("whoisxmlapi", singleToList(state.WhoisXMLAPIKey))
+	appendList("zoomeyeapi", singleToList(state.ZoomEyeAPIKey))
 	return out
 }
 

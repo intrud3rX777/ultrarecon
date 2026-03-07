@@ -21,10 +21,12 @@ import (
 )
 
 type collectorResult struct {
-	Name      string
-	Hosts     []string
-	Err       error
-	ToolError *ToolError
+	Name       string
+	Hosts      []string
+	Err        error
+	ToolError  *ToolError
+	Duration   time.Duration
+	SkipReason string
 }
 
 var errCollectorSkipped = errors.New("collector skipped")
@@ -35,7 +37,8 @@ func runPassiveCollection(
 	store *SafeStore,
 	toolErrs *[]ToolError,
 	logf func(string, ...any),
-) []string {
+	diagf func(string, ...any),
+) ([]string, []PassiveCollectorDiagnostic) {
 	collectors := []struct {
 		name string
 		fn   func(context.Context, config.Config) ([]string, error)
@@ -64,10 +67,11 @@ func runPassiveCollection(
 
 			start := time.Now()
 			hosts, err := c.fn(subCtx, cfg)
+			dur := time.Since(start).Round(time.Millisecond)
 			if err != nil {
 				if errors.Is(err, errCollectorSkipped) {
-					logf("[passive] %s skipped in %s: %v", c.name, time.Since(start).Round(time.Millisecond), err)
-					resCh <- collectorResult{Name: c.name, Hosts: nil}
+					logf("[passive] %s skipped in %s: %v", c.name, dur, err)
+					resCh <- collectorResult{Name: c.name, Hosts: nil, Duration: dur, SkipReason: trimCollectorSkipReason(err)}
 					return
 				}
 				te := ToolError{
@@ -75,21 +79,42 @@ func runPassiveCollection(
 					Tool:  c.name,
 					Error: err.Error(),
 				}
-				resCh <- collectorResult{Name: c.name, Err: err, ToolError: &te}
-				logf("[passive] %s failed in %s: %v", c.name, time.Since(start).Round(time.Millisecond), err)
+				resCh <- collectorResult{Name: c.name, Err: err, ToolError: &te, Duration: dur}
+				logf("[passive] %s failed in %s: %v", c.name, dur, err)
 				return
 			}
-			logf("[passive] %s completed in %s (%d raw)", c.name, time.Since(start).Round(time.Millisecond), len(hosts))
-			resCh <- collectorResult{Name: c.name, Hosts: hosts}
+			logf("[passive] %s completed in %s (%d raw)", c.name, dur, len(hosts))
+			resCh <- collectorResult{Name: c.name, Hosts: hosts, Duration: dur}
 		}()
 	}
 	wg.Wait()
 	close(resCh)
 
 	all := make([]string, 0, 4096)
+	diagnostics := make([]PassiveCollectorDiagnostic, 0, len(collectors))
 	for res := range resCh {
+		diag := PassiveCollectorDiagnostic{
+			Collector: res.Name,
+			Duration:  res.Duration.String(),
+			RawCount:  len(res.Hosts),
+		}
+		if res.SkipReason != "" {
+			diag.Status = "skipped"
+			diag.Reason = res.SkipReason
+			diagnostics = append(diagnostics, diag)
+			if cfg.EnableDiagnostics {
+				diagf("[diag][passive] collector=%s status=%s duration=%s reason=%s", diag.Collector, diag.Status, diag.Duration, diag.Reason)
+			}
+			continue
+		}
 		if res.ToolError != nil {
 			*toolErrs = append(*toolErrs, *res.ToolError)
+			diag.Status = "failed"
+			diag.Reason = res.ToolError.Error
+			diagnostics = append(diagnostics, diag)
+			if cfg.EnableDiagnostics {
+				diagf("[diag][passive] collector=%s status=%s duration=%s reason=%s", diag.Collector, diag.Status, diag.Duration, diag.Reason)
+			}
 			continue
 		}
 		normalized := make([]string, 0, len(res.Hosts))
@@ -99,19 +124,55 @@ func runPassiveCollection(
 			}
 		}
 		normalized = util.UniqueSorted(normalized)
+		capped := false
 		if len(normalized) > cfg.MaxPassivePerSource {
 			normalized = trimCandidatesByPriority(normalized, cfg.Domain, cfg.MaxPassivePerSource)
 			logf("[passive] %s capped_to=%d", res.Name, len(normalized))
+			capped = true
 		}
 		added := store.AddBatch(normalized, "passive:"+res.Name)
 		logf("[passive] %s accepted=%d added=%d", res.Name, len(normalized), added)
+		diag.Accepted = len(normalized)
+		diag.Added = added
+		diag.Status = "completed"
+		if capped {
+			diag.Status = "downgraded"
+			diag.Reason = fmt.Sprintf("capped to max_passive_source=%d", cfg.MaxPassivePerSource)
+		}
+		diagnostics = append(diagnostics, diag)
+		if cfg.EnableDiagnostics {
+			msg := "[diag][passive] collector=%s status=%s duration=%s raw=%d accepted=%d added=%d"
+			args := []any{diag.Collector, diag.Status, diag.Duration, diag.RawCount, diag.Accepted, diag.Added}
+			if diag.Reason != "" {
+				msg += " reason=%s"
+				args = append(args, diag.Reason)
+			}
+			diagf(msg, args...)
+		}
 		all = append(all, normalized...)
 	}
 	all = util.UniqueSorted(all)
 	if len(all) > cfg.MaxPassiveCandidates {
 		all = trimCandidatesByPriority(all, cfg.Domain, cfg.MaxPassiveCandidates)
 	}
-	return all
+	sort.Slice(diagnostics, func(i, j int) bool {
+		if diagnostics[i].Collector == diagnostics[j].Collector {
+			return diagnostics[i].Status < diagnostics[j].Status
+		}
+		return diagnostics[i].Collector < diagnostics[j].Collector
+	})
+	return all, diagnostics
+}
+
+func trimCollectorSkipReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(err.Error())
+	if strings.HasPrefix(msg, errCollectorSkipped.Error()+":") {
+		return strings.TrimSpace(strings.TrimPrefix(msg, errCollectorSkipped.Error()+":"))
+	}
+	return msg
 }
 
 func collectSubfinder(ctx context.Context, cfg config.Config) ([]string, error) {

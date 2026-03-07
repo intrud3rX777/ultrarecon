@@ -100,6 +100,7 @@ type Config struct {
 	MaxPassiveCandidates    int
 	MaxResolveQueue         int
 	StrictValidation        bool
+	EnableDiagnostics       bool
 	Verbose                 bool
 }
 
@@ -205,6 +206,7 @@ func Default() Config {
 		MaxPassiveCandidates:    25000,
 		MaxResolveQueue:         20000,
 		StrictValidation:        false,
+		EnableDiagnostics:       false,
 		Verbose:                 false,
 	}
 }

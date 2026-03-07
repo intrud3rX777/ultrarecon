@@ -18,6 +18,14 @@ func TestBuildSubfinderProviderLines(t *testing.T) {
 		ShodanAPIKey:         "shodan-key",
 		CertSpotterAPIKey:    "certspotter-key",
 		BufferOverAPIKey:     "bufferover-key",
+		BinaryEdgeAPIKey:     "binaryedge-key",
+		FOFAEmail:            "user@example.com",
+		FOFAKey:              "fofa-key",
+		FullHuntAPIKey:       "fullhunt-key",
+		PassiveTotalUser:     "passive-user",
+		PassiveTotalKey:      "passive-key",
+		ThreatBookAPIKey:     "threatbook-key",
+		ZoomEyeAPIKey:        "zoomeye-key",
 	}
 
 	joined := strings.Join(buildSubfinderProviderLines(state), "\n")
@@ -30,6 +38,12 @@ func TestBuildSubfinderProviderLines(t *testing.T) {
 		"shodan:\n  - \"shodan-key\"",
 		"certspotter:\n  - \"certspotter-key\"",
 		"bufferover:\n  - \"bufferover-key\"",
+		"binaryedge:\n  - \"binaryedge-key\"",
+		"fofa:\n  - \"user@example.com:fofa-key\"",
+		"fullhunt:\n  - \"fullhunt-key\"",
+		"passivetotal:\n  - \"passive-user:passive-key\"",
+		"threatbook:\n  - \"threatbook-key\"",
+		"zoomeyeapi:\n  - \"zoomeye-key\"",
 	}
 	for _, want := range checks {
 		if !strings.Contains(joined, want) {
