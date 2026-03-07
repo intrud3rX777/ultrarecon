@@ -1,5 +1,5 @@
-ultrarecon.exe
-ultrarecon
+/ultrarecon.exe
+/ultrarecon
 *.exe
 *.dll
 *.tmp

@@ -101,6 +101,13 @@ Final output:
 
 ## Installation
 
+Clone the repository first:
+
+```bash
+git clone https://github.com/intrud3rX777/ultrarecon.git
+cd ultrarecon
+```
+
 ### Build From Source
 
 Linux or macOS:
@@ -115,12 +122,23 @@ Windows:
 go build -o ultrarecon.exe ./cmd/ultrarecon
 ```
 
+Run commands:
+
+- Linux or macOS: `./ultrarecon`
+- Windows PowerShell: `.\ultrarecon.exe`
+
 ### Auto-Install Dependencies
 
 UltraRecon can install supported tools automatically:
 
 ```bash
 ./ultrarecon -d example.com --install-tools --install-optional
+```
+
+Windows PowerShell:
+
+```powershell
+.\ultrarecon.exe -d example.com --install-tools --install-optional
 ```
 
 This only installs missing supported tools. Existing tools are reused.
@@ -143,6 +161,14 @@ Run later phases from an existing subdomain list:
 
 ```bash
 ./ultrarecon -d example.com --phase probe --subdomains-in final_subdomains.txt --modules service-discovery,surface-mapping,content-discovery,security-checks,http-probe -v
+```
+
+Windows PowerShell equivalents:
+
+```powershell
+.\ultrarecon.exe -d example.com --phase all --install-tools -v
+.\ultrarecon.exe -d example.com --phase subdomains -o out_subs -v
+.\ultrarecon.exe -d example.com --phase probe --subdomains-in final_subdomains.txt --modules service-discovery,surface-mapping,content-discovery,security-checks,http-probe -v
 ```
 
 ## Common Usage
@@ -273,15 +299,6 @@ UltraRecon is built to avoid the common failure modes of fast recon tools:
 - For heavier scans, use a VPS or lab environment
 - Some modules depend on external tools such as `naabu`, `ffuf`, and `nuclei`
 
-## GitHub Publishing
+## Repository
 
-This workspace is ready to publish, but Git is not available in the current environment and no GitHub CLI or token is configured. Once `git` is installed and authenticated, the usual flow is:
-
-```bash
-git init
-git add .
-git commit -m "Initial UltraRecon release"
-git branch -M main
-git remote add origin <your-repo-url>
-git push -u origin main
-```
+GitHub: `https://github.com/intrud3rX777/ultrarecon`
