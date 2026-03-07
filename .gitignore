@@ -25,3 +25,5 @@ asn_module_check/
 
 *.log
 resolvers_trickest.txt
+.ultrarecon/
+resume_smoke*/

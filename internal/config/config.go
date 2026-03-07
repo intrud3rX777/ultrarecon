@@ -16,6 +16,8 @@ type Config struct {
 	Phase                   string
 	HomeSafe                bool
 	FinalOnly               bool
+	Resume                  bool
+	ResumeFrom              string
 	Domain                  string
 	OutputDir               string
 	InputSubdomainsFile     string
@@ -124,6 +126,8 @@ func Default() Config {
 		Phase:                   "all",
 		HomeSafe:                true,
 		FinalOnly:               true,
+		Resume:                  false,
+		ResumeFrom:              "",
 		OutputDir:               "output_ultra",
 		PassiveTimeout:          5 * time.Minute,
 		ToolTimeout:             4 * time.Minute,
@@ -359,6 +363,10 @@ func (c *Config) Normalize() error {
 	if err := validateDomain(c.Domain); err != nil {
 		return err
 	}
+	c.ResumeFrom = strings.TrimSpace(c.ResumeFrom)
+	if c.ResumeFrom != "" {
+		c.Resume = true
+	}
 
 	if strings.TrimSpace(c.OutputDir) == "" {
 		return errors.New("output directory cannot be empty")
@@ -545,7 +553,7 @@ func (c *Config) Normalize() error {
 			return fmt.Errorf("subdomains input file %q not accessible: %w", c.InputSubdomainsFile, err)
 		}
 	}
-	if c.Phase == "probe" && strings.TrimSpace(c.InputSubdomainsFile) == "" {
+	if c.Phase == "probe" && strings.TrimSpace(c.InputSubdomainsFile) == "" && !c.Resume {
 		return errors.New("phase probe requires --subdomains-in file")
 	}
 	if c.WordlistFile != "" {

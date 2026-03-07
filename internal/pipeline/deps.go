@@ -58,7 +58,6 @@ func EnsureDependencies(ctx context.Context, cfg config.Config, installOptional 
 		{Name: "gotator", Install: []string{"go", "install", "github.com/Josue87/gotator@latest"}},
 		{Name: "hakip2host", Install: []string{"go", "install", "github.com/hakluke/hakip2host@latest"}},
 		{Name: "csprecon", Install: []string{"go", "install", "github.com/edoardottt/csprecon/cmd/csprecon@latest"}},
-		{Name: "findomain", Install: nil, Platforms: map[string]bool{"linux": true, "darwin": true}},
 	}
 
 	for _, dep := range deps {

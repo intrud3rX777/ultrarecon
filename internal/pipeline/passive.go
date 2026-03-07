@@ -43,15 +43,12 @@ func runPassiveCollection(
 		{name: "subfinder", fn: collectSubfinder},
 		{name: "assetfinder", fn: collectAssetfinder},
 		{name: "amass", fn: collectAmassPassive},
-		{name: "findomain", fn: collectFindomain},
 		{name: "chaos", fn: collectChaos},
 		{name: "crtsh", fn: collectCRTSh},
 		{name: "certspotter", fn: collectCertSpotter},
 		{name: "anubis", fn: collectAnubis},
 		{name: "alienvault", fn: collectAlienVault},
-		{name: "threatcrowd", fn: collectThreatCrowd},
 		{name: "rapiddns", fn: collectRapidDNS},
-		{name: "bufferover", fn: collectBufferOver},
 		{name: "hackertarget", fn: collectHackerTarget},
 	}
 
@@ -134,19 +131,7 @@ func collectAssetfinder(ctx context.Context, cfg config.Config) ([]string, error
 }
 
 func collectAmassPassive(ctx context.Context, cfg config.Config) ([]string, error) {
-	res := util.RunCommand(ctx, cfg.ToolTimeout, "amass", "enum", "-passive", "-norecursive", "-noalts", "-d", cfg.Domain)
-	if res.Err != nil {
-		return nil, res.Err
-	}
-	return splitLines(res.Stdout), nil
-}
-
-func collectFindomain(ctx context.Context, cfg config.Config) ([]string, error) {
-	res := util.RunCommand(ctx, cfg.ToolTimeout, "findomain", "-t", cfg.Domain, "-q")
-	if res.Err != nil {
-		return nil, res.Err
-	}
-	return splitLines(res.Stdout), nil
+	return runAmassPassive(ctx, cfg.ToolTimeout, cfg.Domain, cfg.OutputDir)
 }
 
 func collectChaos(ctx context.Context, cfg config.Config) ([]string, error) {
@@ -188,37 +173,6 @@ func collectCRTSh(ctx context.Context, cfg config.Config) ([]string, error) {
 				out = append(out, line)
 			}
 		}
-	}
-	return util.UniqueSorted(out), nil
-}
-
-func collectBufferOver(ctx context.Context, cfg config.Config) ([]string, error) {
-	u := "https://dns.bufferover.run/dns?q=." + url.QueryEscape(cfg.Domain)
-	body, err := httpGet(ctx, cfg.ToolTimeout, u)
-	if err != nil {
-		return nil, err
-	}
-	var obj struct {
-		FDNSA []string `json:"FDNS_A"`
-		RDNS  []string `json:"RDNS"`
-	}
-	if err := json.Unmarshal(body, &obj); err != nil {
-		return nil, fmt.Errorf("bufferover parse: %w", err)
-	}
-	out := make([]string, 0, len(obj.FDNSA)+len(obj.RDNS))
-	for _, row := range obj.FDNSA {
-		parts := strings.Split(row, ",")
-		if len(parts) < 2 {
-			continue
-		}
-		out = append(out, strings.TrimSpace(parts[1]))
-	}
-	for _, row := range obj.RDNS {
-		parts := strings.Split(row, ",")
-		if len(parts) < 2 {
-			continue
-		}
-		out = append(out, strings.TrimSpace(parts[1]))
 	}
 	return util.UniqueSorted(out), nil
 }
@@ -305,21 +259,6 @@ func collectAlienVault(ctx context.Context, cfg config.Config) ([]string, error)
 		}
 	}
 	return util.UniqueSorted(out), nil
-}
-
-func collectThreatCrowd(ctx context.Context, cfg config.Config) ([]string, error) {
-	u := "https://www.threatcrowd.org/searchApi/v2/domain/report/?domain=" + url.QueryEscape(cfg.Domain)
-	body, err := httpGet(ctx, cfg.ToolTimeout, u)
-	if err != nil {
-		return nil, err
-	}
-	var obj struct {
-		Subdomains []string `json:"subdomains"`
-	}
-	if err := json.Unmarshal(body, &obj); err != nil {
-		return nil, fmt.Errorf("threatcrowd parse: %w", err)
-	}
-	return util.UniqueSorted(obj.Subdomains), nil
 }
 
 func collectRapidDNS(ctx context.Context, cfg config.Config) ([]string, error) {

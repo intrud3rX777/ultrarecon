@@ -31,15 +31,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		StartedAt: started,
 	}
 
-	logf, closeLog, err := initLogger(cfg.OutputDir, cfg.Verbose)
-	if err != nil {
-		return nil, err
-	}
-	defer closeLog()
-
-	logf("ultrarecon started domain=%s output=%s", cfg.Domain, cfg.OutputDir)
 	store := NewSafeStore()
-
 	var toolErrs []ToolError
 	var passiveHosts []string
 	var noerrorHosts []string
@@ -59,8 +51,93 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 	var contentRows []ContentRow
 	var paramKeys []string
 	var securityFindings []SecurityFinding
+	var resolvers []dnsResolver
+
+	checkpoint, err := loadResumeCheckpoint(cfg)
+	if err != nil {
+		return nil, err
+	}
+	appendLog := false
+	completedStages := make(map[string]struct{})
+	if checkpoint != nil {
+		appendLog = true
+		loadedSummary := checkpoint.Summary
+		summary = &loadedSummary
+		if summary.OutputDir == "" {
+			summary.OutputDir = cfg.OutputDir
+		}
+		if summary.StartedAt.IsZero() {
+			summary.StartedAt = started
+		} else {
+			started = summary.StartedAt
+		}
+		store = restoreCheckpointStore(checkpoint.Store)
+		toolErrs = append([]ToolError(nil), checkpoint.ToolErrors...)
+		passiveHosts = append([]string(nil), checkpoint.Artifacts.PassiveHosts...)
+		noerrorHosts = append([]string(nil), checkpoint.Artifacts.NoerrorHosts...)
+		dnsPivotHosts = append([]string(nil), checkpoint.Artifacts.DNSPivotHosts...)
+		asnHosts = append([]string(nil), checkpoint.Artifacts.ASNHosts...)
+		zoneTransferHosts = append([]string(nil), checkpoint.Artifacts.ZoneTransferHosts...)
+		bruteHosts = append([]string(nil), checkpoint.Artifacts.BruteHosts...)
+		recursiveHosts = append([]string(nil), checkpoint.Artifacts.RecursiveHosts...)
+		recursiveBruteHosts = append([]string(nil), checkpoint.Artifacts.RecursiveBruteHosts...)
+		enrichmentHosts = append([]string(nil), checkpoint.Artifacts.EnrichmentHosts...)
+		analyticsHosts = append([]string(nil), checkpoint.Artifacts.AnalyticsHosts...)
+		scrapingHosts = append([]string(nil), checkpoint.Artifacts.ScrapingHosts...)
+		permutations = append([]string(nil), checkpoint.Artifacts.Permutations...)
+		gotatorHosts = append([]string(nil), checkpoint.Artifacts.GotatorHosts...)
+		serviceRows = append([]ServiceRow(nil), checkpoint.Artifacts.ServiceRows...)
+		surfaceRows = append([]SurfaceRow(nil), checkpoint.Artifacts.SurfaceRows...)
+		contentRows = append([]ContentRow(nil), checkpoint.Artifacts.ContentRows...)
+		paramKeys = append([]string(nil), checkpoint.Artifacts.ParamKeys...)
+		securityFindings = append([]SecurityFinding(nil), checkpoint.Artifacts.SecurityFindings...)
+		resolvers = restoreCheckpointResolvers(checkpoint.Resolvers)
+		completedStages = checkpointCompletedStages(summary)
+	}
+
+	logf, closeLog, err := initLogger(cfg.OutputDir, cfg.Verbose, appendLog)
+	if err != nil {
+		return nil, err
+	}
+	defer closeLog()
+
+	logf("ultrarecon started domain=%s output=%s", cfg.Domain, cfg.OutputDir)
+	if checkpoint != nil {
+		logf("[resume] loaded checkpoint stage=%s completed=%d", checkpoint.CurrentStage, len(summary.Stages))
+		if _, ok := completedStages["write_artifacts"]; ok && strings.TrimSpace(cfg.ResumeFrom) == "" {
+			logf("[resume] latest checkpoint already completed")
+			return summary, nil
+		}
+	}
+
+	currentArtifacts := func() checkpointArtifacts {
+		return checkpointArtifacts{
+			PassiveHosts:        passiveHosts,
+			NoerrorHosts:        noerrorHosts,
+			DNSPivotHosts:       dnsPivotHosts,
+			ASNHosts:            asnHosts,
+			ZoneTransferHosts:   zoneTransferHosts,
+			BruteHosts:          bruteHosts,
+			RecursiveHosts:      recursiveHosts,
+			RecursiveBruteHosts: recursiveBruteHosts,
+			EnrichmentHosts:     enrichmentHosts,
+			AnalyticsHosts:      analyticsHosts,
+			ScrapingHosts:       scrapingHosts,
+			Permutations:        permutations,
+			GotatorHosts:        gotatorHosts,
+			ServiceRows:         serviceRows,
+			SurfaceRows:         surfaceRows,
+			ContentRows:         contentRows,
+			ParamKeys:           paramKeys,
+			SecurityFindings:    securityFindings,
+		}
+	}
 
 	stage := func(name string, fn func() error) error {
+		if _, ok := completedStages[name]; ok {
+			logf("[stage] skip  %s (resume)", name)
+			return nil
+		}
 		logf("[stage] start %s", name)
 		s := time.Now()
 		err := fn()
@@ -71,12 +148,19 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		}
 		if err != nil {
 			st.Details = err.Error()
+			summary.Stages = append(summary.Stages, st)
 			logf("[stage] fail  %s (%s): %v", name, dur, err)
-		} else {
-			logf("[stage] done  %s (%s)", name, dur)
+			return err
 		}
 		summary.Stages = append(summary.Stages, st)
-		return err
+		if saveErr := saveCheckpointState(cfg, name, summary, store, toolErrs, resolvers, currentArtifacts()); saveErr != nil {
+			summary.Stages[len(summary.Stages)-1].Details = saveErr.Error()
+			logf("[stage] fail  %s (%s): %v", name, dur, saveErr)
+			return fmt.Errorf("save checkpoint after %s: %w", name, saveErr)
+		}
+		completedStages[name] = struct{}{}
+		logf("[stage] done  %s (%s)", name, dur)
+		return nil
 	}
 
 	if cfg.Phase == "probe" {
@@ -108,7 +192,6 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		}
 	}
 
-	var resolvers []dnsResolver
 	if err := stage("resolver_selection", func() error {
 		resolvers = prepareResolvers(ctx, cfg, logf)
 		if len(resolvers) == 0 {
@@ -572,9 +655,17 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 	return summary, nil
 }
 
-func initLogger(outputDir string, verbose bool) (func(string, ...any), func(), error) {
+func initLogger(outputDir string, verbose bool, appendMode bool) (func(string, ...any), func(), error) {
 	logPath := filepath.Join(outputDir, "ultrarecon.log")
-	f, err := os.Create(logPath)
+	var (
+		f   *os.File
+		err error
+	)
+	if appendMode {
+		f, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	} else {
+		f, err = os.Create(logPath)
+	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("create log file: %w", err)
 	}

@@ -28,6 +28,7 @@ Each phase can run independently or as part of a full pipeline.
 - Clean final reports by default
 - Windows and Linux support
 - Auto-install of supported dependencies with `--install-tools`
+- Persistent stage checkpoints with `--resume` and `--resume-from`
 
 ## Recon Phases
 
@@ -35,7 +36,7 @@ Each phase can run independently or as part of a full pipeline.
 
 This phase discovers in-scope subdomains using:
 
-- Passive sources: `subfinder`, `assetfinder`, `amass`, `crt.sh`, `certspotter`, `anubis`, `rapiddns`, `bufferover`, `hackertarget`, and others
+- Passive sources: `subfinder`, `assetfinder`, `amass`, `crt.sh`, `certspotter`, `anubis`, `rapiddns`, `alienvault`, `hackertarget`, and provider-backed sources configured through first-run setup
 - DNS pivots from CNAME, NS, MX, SRV, TXT, and PTR data
 - ASN and CIDR expansion with `asnmap`
 - Bruteforce and recursive bruteforce
@@ -143,6 +144,29 @@ Windows PowerShell:
 
 This only installs missing supported tools. Existing tools are reused.
 
+## First-Run Provider Setup
+
+On the first interactive run, UltraRecon can prompt for optional API keys and tokens used by provider-backed passive sources.
+
+Supported saved entries currently include:
+
+- ProjectDiscovery or Chaos API key
+- GitHub token(s)
+- Censys API ID and secret
+- SecurityTrails API key
+- VirusTotal API key
+- Shodan API key
+- CertSpotter API key
+- BufferOver API key
+
+Behavior:
+
+- Press `Enter` on any prompt to skip it
+- The saved state is reused on later runs
+- UltraRecon writes a `subfinder` `provider-config.yaml` automatically from the answers
+- Use `--setup-force` to rerun the wizard and replace the saved values
+- Use `--setup=false` to disable the prompt for a run
+
 ## Quick Start
 
 Run the full pipeline:
@@ -169,6 +193,18 @@ Windows PowerShell equivalents:
 .\ultrarecon.exe -d example.com --phase all --install-tools -v
 .\ultrarecon.exe -d example.com --phase subdomains -o out_subs -v
 .\ultrarecon.exe -d example.com --phase probe --subdomains-in final_subdomains.txt --modules service-discovery,surface-mapping,content-discovery,security-checks,http-probe -v
+```
+
+Resume an interrupted run from the latest checkpoint in the same output directory:
+
+```bash
+./ultrarecon -d example.com --phase all -o output_ultra --resume -v
+```
+
+Resume from a specific previously checkpointed stage:
+
+```bash
+./ultrarecon -d example.com --phase all -o output_ultra --resume-from write_artifacts -v
 ```
 
 ## Common Usage
@@ -229,7 +265,11 @@ Windows PowerShell equivalents:
 - `--subdomains-in`: input file for `probe` phase
 - `--install-tools`: install missing supported dependencies
 - `--install-optional`: also install optional tools
+- `--setup`: enable or disable the first-run provider prompt
+- `--setup-force`: rerun the first-run provider prompt and overwrite saved values
 - `--final-only`: write only final artifacts
+- `--resume`: continue from the latest saved checkpoint in the output directory
+- `--resume-from`: restart from a specific previously checkpointed stage
 - `-v`, `--verbose`: show stage-by-stage execution
 - `--profile`: `speed`, `balanced`, or `strict`
 - `--home-safe`: safer limits for home or unstable links
@@ -275,6 +315,8 @@ By default UltraRecon writes only clean, final artifacts:
 - `report.md`
 - `ultrarecon.log`
 
+UltraRecon also keeps internal checkpoint files under `.ultrarecon/` inside the output directory so interrupted runs can continue safely.
+
 If you want intermediate artifacts too:
 
 ```bash
@@ -302,3 +344,5 @@ UltraRecon is built to avoid the common failure modes of fast recon tools:
 ## Repository
 
 GitHub: `https://github.com/intrud3rX777/ultrarecon`
+
+

@@ -158,7 +158,9 @@ func runRecursivePassiveCollection(
 			runCollector(seed, "subfinder", collectSubfinderForDomain)
 		}
 		if haveAmass {
-			runCollector(seed, "amass", collectAmassForDomain)
+			runCollector(seed, "amass", func(ctx context.Context, domain string, timeout time.Duration) ([]string, error) {
+				return runAmassPassive(ctx, timeout, domain, cfg.OutputDir)
+			})
 		}
 		if haveAssetfinder {
 			runCollector(seed, "assetfinder", collectAssetfinderForDomain)
@@ -407,14 +409,6 @@ func normalizeCandidates(raw []string, domain string) []string {
 
 func collectSubfinderForDomain(ctx context.Context, domain string, timeout time.Duration) ([]string, error) {
 	res := util.RunCommand(ctx, timeout, "subfinder", "-silent", "-all", "-d", domain)
-	if res.Err != nil {
-		return nil, res.Err
-	}
-	return splitLines(res.Stdout), nil
-}
-
-func collectAmassForDomain(ctx context.Context, domain string, timeout time.Duration) ([]string, error) {
-	res := util.RunCommand(ctx, timeout, "amass", "enum", "-passive", "-norecursive", "-noalts", "-d", domain)
 	if res.Err != nil {
 		return nil, res.Err
 	}

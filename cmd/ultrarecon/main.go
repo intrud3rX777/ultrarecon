@@ -14,6 +14,7 @@ import (
 
 	"ultrarecon/internal/config"
 	"ultrarecon/internal/pipeline"
+	"ultrarecon/internal/setup"
 	"ultrarecon/internal/util"
 )
 
@@ -23,6 +24,8 @@ func main() {
 	var installOptional bool
 	var installTimeout time.Duration
 	var modulesCSV string
+	var runSetup bool
+	var forceSetup bool
 
 	flag.StringVar(&cfg.Domain, "d", "", "target domain (required)")
 	flag.StringVar(&cfg.Domain, "domain", "", "target domain (required)")
@@ -30,7 +33,9 @@ func main() {
 	flag.StringVar(&cfg.Phase, "phase", cfg.Phase, "run phase: all|subdomains|probe")
 	flag.StringVar(&cfg.OutputDir, "o", cfg.OutputDir, "output directory")
 	flag.StringVar(&cfg.OutputDir, "output", cfg.OutputDir, "output directory")
-	flag.StringVar(&cfg.InputSubdomainsFile, "subdomains-in", cfg.InputSubdomainsFile, "input subdomain file (required for --phase probe)")
+	flag.StringVar(&cfg.InputSubdomainsFile, "subdomains-in", cfg.InputSubdomainsFile, "input subdomain file (required for --phase probe unless resuming)")
+	flag.BoolVar(&cfg.Resume, "resume", cfg.Resume, "resume from the latest saved checkpoint in the output directory")
+	flag.StringVar(&cfg.ResumeFrom, "resume-from", cfg.ResumeFrom, "resume from a specific previously checkpointed stage")
 	flag.StringVar(&cfg.ResolversFile, "resolvers", "", "custom resolvers file")
 	flag.StringVar(&cfg.WordlistFile, "wordlist", "", "custom permutation wordlist")
 	flag.StringVar(&cfg.BruteWordlistFile, "brute-wordlist", "", "custom bruteforce wordlist")
@@ -122,9 +127,14 @@ func main() {
 	flag.BoolVar(&cfg.FinalOnly, "final-only", cfg.FinalOnly, "write clean final artifacts only")
 	flag.BoolVar(&installTools, "install-tools", true, "auto-install missing dependencies")
 	flag.BoolVar(&installOptional, "install-optional", true, "install optional tools for broader coverage")
+	flag.BoolVar(&runSetup, "setup", true, "run first-time API/provider setup when no saved configuration exists")
+	flag.BoolVar(&forceSetup, "setup-force", false, "rerun API/provider setup and overwrite the saved configuration")
 	flag.DurationVar(&installTimeout, "install-timeout", 18*time.Minute, "timeout for each dependency install command")
 
 	flag.Parse()
+	if strings.TrimSpace(cfg.ResumeFrom) != "" {
+		cfg.Resume = true
+	}
 
 	if cfg.Domain == "" {
 		fmt.Fprintln(os.Stderr, "error: -d/--domain is required")
@@ -139,9 +149,13 @@ func main() {
 		os.Exit(2)
 	}
 	util.SetTrace(cfg.Verbose)
+	if _, err := setup.EnsureFirstRun(runSetup, forceSetup, cfg.Verbose); err != nil {
+		fmt.Fprintf(os.Stderr, "setup failed: %v\n", err)
+		os.Exit(1)
+	}
 	if cfg.Verbose {
-		fmt.Printf("[verbose] config phase=%s profile=%s home_safe=%v final_only=%v install_tools=%v install_optional=%v\n",
-			cfg.Phase, cfg.Profile, cfg.HomeSafe, cfg.FinalOnly, installTools, installOptional)
+		fmt.Printf("[verbose] config phase=%s profile=%s home_safe=%v final_only=%v resume=%v resume_from=%s setup=%v setup_force=%v install_tools=%v install_optional=%v\n",
+			cfg.Phase, cfg.Profile, cfg.HomeSafe, cfg.FinalOnly, cfg.Resume, cfg.ResumeFrom, runSetup, forceSetup, installTools, installOptional)
 		fmt.Printf("[verbose] dns max_resolvers=%d max_pool=%d trickest=%v resolver_fetch_timeout=%s\n",
 			cfg.MaxResolvers, cfg.MaxResolverPool, cfg.EnableTrickestResolvers, cfg.ResolverFetchTimeout)
 		fmt.Printf("[verbose] modules passive=%v noerror=%v dns_pivot=%v asn=%v zone_transfer=%v brute=%v recursive=%v recursive_brute=%v enrichment=%v analytics=%v scraping=%v permutations=%v gotator=%v service=%v surface=%v content=%v security=%v http_probe=%v\n",
