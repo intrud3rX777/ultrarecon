@@ -65,7 +65,10 @@ type Summary struct {
 	ServiceLiveURLs         int                          `json:"service_live_urls"`
 	SurfaceURLs             int                          `json:"surface_urls"`
 	SurfacePaths            int                          `json:"surface_paths"`
+	JSFilesAnalyzed         int                          `json:"js_files_analyzed"`
+	JSExtractedURLs         int                          `json:"js_extracted_urls"`
 	ContentRows             int                          `json:"content_rows"`
+	FFUFResults             int                          `json:"ffuf_results"`
 	ParamKeys               int                          `json:"param_keys"`
 	SecurityFindings        int                          `json:"security_findings"`
 	SecurityHighCritical    int                          `json:"security_high_critical"`
@@ -118,6 +121,17 @@ type SurfaceRow struct {
 	ParamKeys []string `json:"param_keys,omitempty"`
 	HasParams bool     `json:"has_params"`
 	Source    string   `json:"source"`
+}
+
+type JSAnalysisRow struct {
+	URL            string   `json:"url"`
+	Host           string   `json:"host"`
+	StatusCode     int      `json:"status_code,omitempty"`
+	ExtractedURLs  []string `json:"extracted_urls,omitempty"`
+	ExtractedHosts []string `json:"extracted_hosts,omitempty"`
+	ExtractedPaths []string `json:"extracted_paths,omitempty"`
+	Source         string   `json:"source"`
+	Error          string   `json:"error,omitempty"`
 }
 
 type ContentRow struct {

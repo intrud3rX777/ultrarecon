@@ -12,7 +12,7 @@ import (
 	"ultrarecon/internal/config"
 )
 
-const checkpointStateVersion = 2
+const checkpointStateVersion = 3
 
 type checkpointArtifacts struct {
 	PassiveHosts        []string          `json:"passive_hosts,omitempty"`
@@ -30,6 +30,7 @@ type checkpointArtifacts struct {
 	GotatorHosts        []string          `json:"gotator_hosts,omitempty"`
 	ServiceRows         []ServiceRow      `json:"service_rows,omitempty"`
 	SurfaceRows         []SurfaceRow      `json:"surface_rows,omitempty"`
+	JSRows              []JSAnalysisRow   `json:"js_rows,omitempty"`
 	ContentRows         []ContentRow      `json:"content_rows,omitempty"`
 	ParamKeys           []string          `json:"param_keys,omitempty"`
 	SecurityFindings    []SecurityFinding `json:"security_findings,omitempty"`

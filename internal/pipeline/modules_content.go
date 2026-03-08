@@ -33,13 +33,13 @@ func runContentDiscovery(
 
 	hosts := collectContentHosts(store, cfg.MaxContentHosts)
 	if len(hosts) == 0 {
-		logf("[content] hosts=0 seeded=%d params=%d", len(contentRows), len(paramKeys))
+		logf("[content] hosts=0 seeded=%d ffuf=0 params=%d", len(contentRows), len(paramKeys))
 		return dedupeContentRows(contentRows, cfg.MaxContentRows), paramKeys
 	}
 
 	if !util.HaveCommand("ffuf") {
 		*toolErrs = append(*toolErrs, ToolError{Stage: "content_discovery", Tool: "ffuf", Error: "tool missing: ffuf"})
-		logf("[content] ffuf missing hosts=%d seeded=%d params=%d", len(hosts), len(contentRows), len(paramKeys))
+		logf("[content] ffuf missing hosts=%d seeded=%d ffuf=0 params=%d", len(hosts), len(contentRows), len(paramKeys))
 		return dedupeContentRows(contentRows, cfg.MaxContentRows), paramKeys
 	}
 
@@ -98,7 +98,7 @@ func runContentDiscovery(
 			store.AddNote(row.Host, "content:"+row.Path)
 		}
 	}
-	logf("[content] hosts=%d rows=%d params=%d", len(hosts), len(contentRows), len(paramKeys))
+	logf("[content] hosts=%d rows=%d ffuf=%d params=%d", len(hosts), len(contentRows), countContentRowsBySource(contentRows, "ffuf"), len(paramKeys))
 	return contentRows, paramKeys
 }
 

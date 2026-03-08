@@ -111,6 +111,9 @@ func main() {
 	flag.IntVar(&cfg.MaxSurfaceInputs, "max-surface-inputs", cfg.MaxSurfaceInputs, "max live/resolved inputs fed into surface mapping")
 	flag.IntVar(&cfg.MaxSurfaceURLs, "max-surface-urls", cfg.MaxSurfaceURLs, "max collected urls retained in surface mapping")
 	flag.IntVar(&cfg.MaxSurfaceRows, "max-surface-rows", cfg.MaxSurfaceRows, "max surface endpoint rows retained")
+	flag.BoolVar(&cfg.EnableJSAnalysis, "js-analysis", cfg.EnableJSAnalysis, "analyze discovered javascript files for extra endpoints and hosts")
+	flag.IntVar(&cfg.MaxJSFiles, "max-js-files", cfg.MaxJSFiles, "max javascript files fetched for analysis")
+	flag.IntVar(&cfg.MaxJSDiscoveries, "max-js-discoveries", cfg.MaxJSDiscoveries, "max urls/endpoints retained from javascript analysis")
 	flag.BoolVar(&cfg.EnableContentDiscovery, "content-discovery", cfg.EnableContentDiscovery, "enable phase-4 content/parameter discovery")
 	flag.IntVar(&cfg.MaxContentHosts, "max-content-hosts", cfg.MaxContentHosts, "max hosts scanned by content discovery")
 	flag.IntVar(&cfg.MaxContentRows, "max-content-rows", cfg.MaxContentRows, "max content discovery rows retained")
@@ -163,12 +166,12 @@ func main() {
 			cfg.Phase, cfg.Profile, cfg.HomeSafe, cfg.FinalOnly, cfg.Resume, cfg.ResumeFrom, runSetup, forceSetup, cfg.EnableDiagnostics, installTools, installOptional)
 		fmt.Printf("[verbose] dns max_resolvers=%d max_pool=%d trickest=%v resolver_fetch_timeout=%s\n",
 			cfg.MaxResolvers, cfg.MaxResolverPool, cfg.EnableTrickestResolvers, cfg.ResolverFetchTimeout)
-		fmt.Printf("[verbose] modules passive=%v noerror=%v dns_pivot=%v asn=%v zone_transfer=%v brute=%v recursive=%v recursive_brute=%v enrichment=%v analytics=%v scraping=%v permutations=%v gotator=%v service=%v surface=%v content=%v security=%v http_probe=%v screenshots=%v\n",
+		fmt.Printf("[verbose] modules passive=%v noerror=%v dns_pivot=%v asn=%v zone_transfer=%v brute=%v recursive=%v recursive_brute=%v enrichment=%v analytics=%v scraping=%v permutations=%v gotator=%v service=%v surface=%v js=%v content=%v security=%v http_probe=%v screenshots=%v\n",
 			cfg.EnablePassive, cfg.EnableNoerror, cfg.EnableDNSPivot, cfg.EnableASNExpansion, cfg.EnableZoneTransfer,
 			cfg.EnableBruteforce, cfg.EnableRecursive, cfg.EnableRecursiveBrute,
 			(cfg.EnableCSPExtraction || cfg.EnableArchiveSources || cfg.EnableTLSEnumeration),
 			cfg.EnableAnalyticsPivot, cfg.EnableScrapingPivot, cfg.EnablePermutations, cfg.EnableGotator, cfg.EnableServiceDiscovery,
-			cfg.EnableSurfaceMapping, cfg.EnableContentDiscovery, cfg.EnableSecurityChecks, cfg.EnableHTTPProbe, cfg.EnableScreenshots)
+			cfg.EnableSurfaceMapping, cfg.EnableJSAnalysis, cfg.EnableContentDiscovery, cfg.EnableSecurityChecks, cfg.EnableHTTPProbe, cfg.EnableScreenshots)
 		fmt.Printf("[verbose] screenshots targets=%d concurrency=%d timeout=%s\n",
 			cfg.MaxScreenshotTargets, cfg.ScreenshotConcurrency, cfg.ScreenshotTimeout)
 	}
@@ -232,6 +235,7 @@ func applyPhaseDefaults(cfg *config.Config) {
 		cfg.EnableScrapingPivot = false
 		cfg.EnableServiceDiscovery = true
 		cfg.EnableSurfaceMapping = true
+		cfg.EnableJSAnalysis = true
 		cfg.EnableContentDiscovery = true
 		cfg.EnableSecurityChecks = true
 		cfg.EnableHTTPProbe = true
@@ -275,6 +279,7 @@ func applyModuleSelection(cfg *config.Config, raw string) error {
 	cfg.EnableScrapingPivot = false
 	cfg.EnableServiceDiscovery = false
 	cfg.EnableSurfaceMapping = false
+	cfg.EnableJSAnalysis = false
 	cfg.EnableContentDiscovery = false
 	cfg.EnableSecurityChecks = false
 	cfg.EnableHTTPProbe = false
@@ -287,6 +292,7 @@ func applyModuleSelection(cfg *config.Config, raw string) error {
 			if phase == "probe" {
 				cfg.EnableServiceDiscovery = true
 				cfg.EnableSurfaceMapping = true
+				cfg.EnableJSAnalysis = true
 				cfg.EnableContentDiscovery = true
 				cfg.EnableSecurityChecks = true
 				cfg.EnableHTTPProbe = true
@@ -309,6 +315,7 @@ func applyModuleSelection(cfg *config.Config, raw string) error {
 				cfg.EnableScrapingPivot = true
 				cfg.EnableServiceDiscovery = true
 				cfg.EnableSurfaceMapping = true
+				cfg.EnableJSAnalysis = true
 				cfg.EnableContentDiscovery = true
 				cfg.EnableSecurityChecks = true
 				cfg.EnableHTTPProbe = true
@@ -400,6 +407,10 @@ func applyModuleSelection(cfg *config.Config, raw string) error {
 			cfg.EnableServiceDiscovery = true
 		case "surface", "surface-mapping", "surface_mapping", "web-surface", "web_surface":
 			cfg.EnableSurfaceMapping = true
+			cfg.EnableJSAnalysis = true
+		case "js", "javascript", "js-analysis", "js_analysis":
+			cfg.EnableSurfaceMapping = true
+			cfg.EnableJSAnalysis = true
 		case "content", "content-discovery", "content_discovery", "params", "fuzz":
 			cfg.EnableContentDiscovery = true
 		case "security", "security-checks", "security_checks", "vuln", "vulns":

@@ -48,6 +48,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 	var gotatorHosts []string
 	var serviceRows []ServiceRow
 	var surfaceRows []SurfaceRow
+	var jsRows []JSAnalysisRow
 	var contentRows []ContentRow
 	var paramKeys []string
 	var securityFindings []SecurityFinding
@@ -89,6 +90,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		gotatorHosts = append([]string(nil), checkpoint.Artifacts.GotatorHosts...)
 		serviceRows = append([]ServiceRow(nil), checkpoint.Artifacts.ServiceRows...)
 		surfaceRows = append([]SurfaceRow(nil), checkpoint.Artifacts.SurfaceRows...)
+		jsRows = append([]JSAnalysisRow(nil), checkpoint.Artifacts.JSRows...)
 		contentRows = append([]ContentRow(nil), checkpoint.Artifacts.ContentRows...)
 		paramKeys = append([]string(nil), checkpoint.Artifacts.ParamKeys...)
 		securityFindings = append([]SecurityFinding(nil), checkpoint.Artifacts.SecurityFindings...)
@@ -136,6 +138,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			GotatorHosts:        gotatorHosts,
 			ServiceRows:         serviceRows,
 			SurfaceRows:         surfaceRows,
+			JSRows:              jsRows,
 			ContentRows:         contentRows,
 			ParamKeys:           paramKeys,
 			SecurityFindings:    securityFindings,
@@ -665,10 +668,28 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		}
 	}
 
+	if cfg.EnableSurfaceMapping && cfg.EnableJSAnalysis {
+		if err := stage("js_analysis", func() error {
+			var jsDiscovered []SurfaceRow
+			jsRows, jsDiscovered = runJSAnalysis(ctx, cfg, surfaceRows, &toolErrs, logf)
+			if len(jsDiscovered) > 0 {
+				surfaceRows = dedupeSurfaceRows(append(surfaceRows, jsDiscovered...), cfg.MaxSurfaceRows)
+			}
+			summary.JSFilesAnalyzed = len(jsRows)
+			summary.JSExtractedURLs = countJSExtractedURLs(jsRows)
+			summary.SurfaceURLs = len(surfaceRows)
+			summary.SurfacePaths = countSurfacePaths(surfaceRows)
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	if cfg.EnableContentDiscovery {
 		if err := stage("content_discovery", func() error {
 			contentRows, paramKeys = runContentDiscovery(ctx, cfg, store, surfaceRows, &toolErrs, logf)
 			summary.ContentRows = len(contentRows)
+			summary.FFUFResults = countContentRowsBySource(contentRows, "ffuf")
 			summary.ParamKeys = len(paramKeys)
 			return nil
 		}); err != nil {
@@ -714,7 +735,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			passiveHosts, noerrorHosts, dnsPivotHosts, asnHosts, zoneTransferHosts,
 			bruteHosts, recursiveHosts, recursiveBruteHosts,
 			enrichmentHosts, analyticsHosts, scrapingHosts, permutations, gotatorHosts, serviceRows,
-			surfaceRows, contentRows, paramKeys, securityFindings, screenshotRows, summary,
+			surfaceRows, jsRows, contentRows, paramKeys, securityFindings, screenshotRows, summary,
 		)
 	}); err != nil {
 		return nil, err
@@ -886,6 +907,17 @@ func countCapturedScreenshots(rows []ScreenshotRow) int {
 	return total
 }
 
+func countContentRowsBySource(rows []ContentRow, source string) int {
+	total := 0
+	want := strings.ToLower(strings.TrimSpace(source))
+	for _, row := range rows {
+		if strings.ToLower(strings.TrimSpace(row.Source)) == want {
+			total++
+		}
+	}
+	return total
+}
+
 func buildStagePlan(cfg config.Config) []string {
 	stages := make([]string, 0, 48)
 	if cfg.Phase == "probe" {
@@ -942,6 +974,9 @@ func buildStagePlan(cfg config.Config) []string {
 	if cfg.EnableSurfaceMapping {
 		stages = append(stages, "surface_mapping")
 	}
+	if cfg.EnableSurfaceMapping && cfg.EnableJSAnalysis {
+		stages = append(stages, "js_analysis")
+	}
 	if cfg.EnableContentDiscovery {
 		stages = append(stages, "content_discovery")
 	}
@@ -985,6 +1020,7 @@ func hasAnySubdomainModuleEnabled(cfg config.Config) bool {
 		cfg.EnablePermutations ||
 		cfg.EnableGotator ||
 		cfg.EnableServiceDiscovery ||
+		cfg.EnableJSAnalysis ||
 		cfg.EnableHTTPProbe ||
 		cfg.EnableScreenshots ||
 		cfg.EnableSurfaceMapping ||

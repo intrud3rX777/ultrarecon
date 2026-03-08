@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -28,6 +29,7 @@ func runSecurityChecks(
 
 	targets := collectSecurityTargets(store, surfaceRows, contentRows, cfg.MaxSecurityTargets)
 	if len(targets) == 0 {
+		logf("[security] targets=0")
 		return nil
 	}
 	if !util.HaveCommand("nuclei") {
@@ -43,37 +45,11 @@ func runSecurityChecks(
 	}
 	defer cleanupTargets()
 
-	attempts := [][]string{
-		{
-			"-l", targetFile,
-			"-silent",
-			"-jsonl",
-			"-severity", "medium,high,critical",
-			"-tags", "takeover,cors,misconfig,exposure,panel,default-login,redirect,token,secret",
-			"-rate-limit", strconvI(maxInt(30, cfg.ContentRate)),
-			"-c", strconvI(minInt(cfg.HTTPThreads, 80)),
-		},
-		{
-			"-l", targetFile,
-			"-silent",
-			"-jsonl",
-			"-severity", "medium,high,critical",
-			"-rate-limit", strconvI(maxInt(30, cfg.ContentRate)),
-			"-c", strconvI(minInt(cfg.HTTPThreads, 80)),
-		},
-		{
-			"-l", targetFile,
-			"-silent",
-			"-jsonl",
-		},
+	logf("[security] running nuclei targets=%d", len(targets))
+	findings, runErr := runNucleiChecks(ctx, cfg, targetFile, logf)
+	if runErr != nil {
+		*toolErrs = append(*toolErrs, ToolError{Stage: "security_checks", Tool: "nuclei", Error: runErr.Error()})
 	}
-
-	var findings []SecurityFinding
-	runToolAttempts(ctx, minDuration(cfg.BruteTimeout, 6*time.Minute), "nuclei", attempts, "security_checks", toolErrs, func(stdout string) {
-		parsed := parseNucleiFindings(stdout, cfg.MaxSecurityFindings)
-		findings = append(findings, parsed...)
-	})
-
 	findings = dedupeFindings(findings, cfg.MaxSecurityFindings)
 	for _, f := range findings {
 		h := findingHost(f.Target)
@@ -86,6 +62,119 @@ func runSecurityChecks(
 	}
 	logf("[security] targets=%d findings=%d", len(targets), len(findings))
 	return findings
+}
+
+func runNucleiChecks(ctx context.Context, cfg config.Config, targetFile string, logf func(string, ...any)) ([]SecurityFinding, error) {
+	attempts := [][]string{
+		{
+			"-l", targetFile,
+			"-silent",
+			"-jsonl",
+			"-duc",
+			"-severity", "medium,high,critical",
+			"-tags", "takeover,cors,misconfig,exposure,panel,default-login,redirect,token,secret",
+			"-rate-limit", strconvI(maxInt(30, cfg.ContentRate)),
+			"-c", strconvI(minInt(cfg.HTTPThreads, 80)),
+		},
+		{
+			"-l", targetFile,
+			"-silent",
+			"-jsonl",
+			"-duc",
+			"-severity", "medium,high,critical",
+			"-rate-limit", strconvI(maxInt(30, cfg.ContentRate)),
+			"-c", strconvI(minInt(cfg.HTTPThreads, 80)),
+		},
+		{
+			"-l", targetFile,
+			"-silent",
+			"-jsonl",
+			"-duc",
+		},
+		{
+			"-l", targetFile,
+			"-silent",
+			"-jsonl",
+		},
+	}
+
+	var (
+		findings []SecurityFinding
+		lastErr  error
+		prepared bool
+	)
+	for _, args := range attempts {
+		subCtx, cancel := context.WithTimeout(ctx, minDuration(cfg.BruteTimeout, 6*time.Minute))
+		res := util.RunCommand(subCtx, minDuration(cfg.BruteTimeout, 6*time.Minute), "nuclei", args...)
+		cancel()
+		if nucleiNeedsTemplates(res.Stdout, res.Stderr) && !prepared {
+			prepared = true
+			if prepErr := ensureNucleiTemplates(ctx, cfg, logf); prepErr != nil {
+				lastErr = prepErr
+			}
+			continue
+		}
+		if strings.TrimSpace(res.Stdout) != "" {
+			findings = append(findings, parseNucleiFindings(res.Stdout, cfg.MaxSecurityFindings)...)
+		}
+		if res.Err == nil && !flagError(res.Stderr) {
+			return findings, lastErr
+		}
+		if res.Err != nil {
+			lastErr = summarizeToolFailure(res.Err, res.Stderr)
+		}
+		if !flagError(res.Stderr) && strings.TrimSpace(res.Stdout) != "" {
+			return findings, lastErr
+		}
+	}
+	if len(findings) > 0 {
+		return findings, lastErr
+	}
+	return findings, lastErr
+}
+
+func ensureNucleiTemplates(ctx context.Context, cfg config.Config, logf func(string, ...any)) error {
+	logf("[security] initializing nuclei templates")
+	attempts := [][]string{
+		{"-ut", "-duc"},
+		{"-update-templates", "-duc"},
+		{"-ut"},
+		{"-update-templates"},
+	}
+	var lastErr error
+	for _, args := range attempts {
+		subCtx, cancel := context.WithTimeout(ctx, minDuration(cfg.BruteTimeout, 4*time.Minute))
+		res := util.RunCommand(subCtx, minDuration(cfg.BruteTimeout, 4*time.Minute), "nuclei", args...)
+		cancel()
+		if res.Err == nil {
+			logf("[security] nuclei templates ready")
+			return nil
+		}
+		if flagError(res.Stderr) {
+			continue
+		}
+		lastErr = summarizeToolFailure(res.Err, res.Stderr)
+	}
+	if lastErr != nil {
+		logf("[security] nuclei template initialization failed: %v", lastErr)
+	}
+	return lastErr
+}
+
+func nucleiNeedsTemplates(stdout, stderr string) bool {
+	low := strings.ToLower(strings.TrimSpace(stdout + "\n" + stderr))
+	return strings.Contains(low, "no templates found") ||
+		strings.Contains(low, "no templates provided") ||
+		strings.Contains(low, "could not find template") ||
+		strings.Contains(low, "templates are not installed") ||
+		strings.Contains(low, "nuclei-templates are not installed")
+}
+
+func summarizeToolFailure(err error, stderr string) error {
+	if msg := strings.TrimSpace(stderr); msg != "" {
+		return errors.New(msg)
+	}
+	return err
 }
 
 func collectSecurityTargets(store *SafeStore, surface []SurfaceRow, content []ContentRow, limit int) []string {

@@ -73,6 +73,7 @@ func writeArtifacts(
 	gotator []string,
 	serviceRows []ServiceRow,
 	surfaceRows []SurfaceRow,
+	jsRows []JSAnalysisRow,
 	contentRows []ContentRow,
 	paramKeys []string,
 	securityFindings []SecurityFinding,
@@ -148,9 +149,17 @@ func writeArtifacts(
 			if err := toJSONLines(filepath.Join(output, "surface_endpoints.jsonl"), surfaceRows); err != nil {
 				return err
 			}
+			if cfg.EnableJSAnalysis {
+				if err := toJSONLines(filepath.Join(output, "js_analysis.jsonl"), jsRows); err != nil {
+					return err
+				}
+			}
 		}
 		if cfg.EnableContentDiscovery {
 			if err := toJSONLines(filepath.Join(output, "content_paths.jsonl"), contentRows); err != nil {
+				return err
+			}
+			if err := toJSONLines(filepath.Join(output, "ffuf_results.jsonl"), ffufRows(contentRows)); err != nil {
 				return err
 			}
 			if err := util.WriteLines(filepath.Join(output, "param_keys.txt"), paramKeys); err != nil {
@@ -235,9 +244,17 @@ func writeArtifacts(
 		if err := toJSONLines(filepath.Join(output, "21_surface_endpoints.jsonl"), surfaceRows); err != nil {
 			return err
 		}
+		if cfg.EnableJSAnalysis {
+			if err := toJSONLines(filepath.Join(output, "21b_js_analysis.jsonl"), jsRows); err != nil {
+				return err
+			}
+		}
 	}
 	if cfg.EnableContentDiscovery {
 		if err := toJSONLines(filepath.Join(output, "22_content_paths.jsonl"), contentRows); err != nil {
+			return err
+		}
+		if err := toJSONLines(filepath.Join(output, "22b_ffuf_results.jsonl"), ffufRows(contentRows)); err != nil {
 			return err
 		}
 		if err := util.WriteLines(filepath.Join(output, "23_param_keys.txt"), paramKeys); err != nil {
@@ -293,9 +310,12 @@ func writeFinalReport(output string, cfg config.Config, summary *Summary, final,
 	}
 	if cfg.EnableSurfaceMapping {
 		artifacts = append(artifacts, "- surface_urls.txt", "- surface_endpoints.jsonl")
+		if cfg.EnableJSAnalysis {
+			artifacts = append(artifacts, "- js_analysis.jsonl")
+		}
 	}
 	if cfg.EnableContentDiscovery {
-		artifacts = append(artifacts, "- content_paths.jsonl", "- param_keys.txt")
+		artifacts = append(artifacts, "- content_paths.jsonl", "- ffuf_results.jsonl", "- param_keys.txt")
 	}
 	if cfg.EnableSecurityChecks {
 		artifacts = append(artifacts, "- security_findings.jsonl")
@@ -321,9 +341,12 @@ func writeFinalReport(output string, cfg config.Config, summary *Summary, final,
 		}
 		if cfg.EnableSurfaceMapping {
 			artifacts = append(artifacts, "- 20_surface_urls.txt", "- 21_surface_endpoints.jsonl")
+			if cfg.EnableJSAnalysis {
+				artifacts = append(artifacts, "- 21b_js_analysis.jsonl")
+			}
 		}
 		if cfg.EnableContentDiscovery {
-			artifacts = append(artifacts, "- 22_content_paths.jsonl", "- 23_param_keys.txt")
+			artifacts = append(artifacts, "- 22_content_paths.jsonl", "- 22b_ffuf_results.jsonl", "- 23_param_keys.txt")
 		}
 		if cfg.EnableSecurityChecks {
 			artifacts = append(artifacts, "- 24_security_findings.jsonl")
@@ -537,6 +560,16 @@ func unusualPassiveDiagnostics(diags []PassiveCollectorDiagnostic) []PassiveColl
 		}
 		return out[i].Status < out[j].Status
 	})
+	return out
+}
+
+func ffufRows(rows []ContentRow) []ContentRow {
+	out := make([]ContentRow, 0, len(rows))
+	for _, row := range rows {
+		if strings.EqualFold(strings.TrimSpace(row.Source), "ffuf") {
+			out = append(out, row)
+		}
+	}
 	return out
 }
 

@@ -75,6 +75,7 @@ type Config struct {
 	EnableGotator           bool
 	EnableServiceDiscovery  bool
 	EnableSurfaceMapping    bool
+	EnableJSAnalysis        bool
 	EnableContentDiscovery  bool
 	EnableSecurityChecks    bool
 	EnableHTTPProbe         bool
@@ -91,6 +92,8 @@ type Config struct {
 	MaxSurfaceInputs        int
 	MaxSurfaceURLs          int
 	MaxSurfaceRows          int
+	MaxJSFiles              int
+	MaxJSDiscoveries        int
 	MaxContentHosts         int
 	MaxContentRows          int
 	MaxParamKeys            int
@@ -185,6 +188,7 @@ func Default() Config {
 		EnableGotator:           true,
 		EnableServiceDiscovery:  true,
 		EnableSurfaceMapping:    true,
+		EnableJSAnalysis:        true,
 		EnableContentDiscovery:  true,
 		EnableSecurityChecks:    true,
 		EnableHTTPProbe:         true,
@@ -201,6 +205,8 @@ func Default() Config {
 		MaxSurfaceInputs:        600,
 		MaxSurfaceURLs:          80000,
 		MaxSurfaceRows:          60000,
+		MaxJSFiles:              80,
+		MaxJSDiscoveries:        5000,
 		MaxContentHosts:         80,
 		MaxContentRows:          12000,
 		MaxParamKeys:            2000,
@@ -258,6 +264,8 @@ func (c *Config) ApplyProfile() {
 		c.MaxSurfaceInputs = maxInt(c.MaxSurfaceInputs, 1000)
 		c.MaxSurfaceURLs = maxInt(c.MaxSurfaceURLs, 140000)
 		c.MaxSurfaceRows = maxInt(c.MaxSurfaceRows, 100000)
+		c.MaxJSFiles = maxInt(c.MaxJSFiles, 120)
+		c.MaxJSDiscoveries = maxInt(c.MaxJSDiscoveries, 9000)
 		c.MaxContentHosts = maxInt(c.MaxContentHosts, 140)
 		c.MaxContentRows = maxInt(c.MaxContentRows, 22000)
 		c.MaxParamKeys = maxInt(c.MaxParamKeys, 3500)
@@ -302,6 +310,8 @@ func (c *Config) ApplyProfile() {
 		c.MaxSurfaceInputs = minInt(c.MaxSurfaceInputs, 400)
 		c.MaxSurfaceURLs = minInt(c.MaxSurfaceURLs, 60000)
 		c.MaxSurfaceRows = minInt(c.MaxSurfaceRows, 45000)
+		c.MaxJSFiles = minInt(c.MaxJSFiles, 40)
+		c.MaxJSDiscoveries = minInt(c.MaxJSDiscoveries, 2000)
 		c.MaxContentHosts = minInt(c.MaxContentHosts, 60)
 		c.MaxContentRows = minInt(c.MaxContentRows, 7000)
 		c.MaxParamKeys = minInt(c.MaxParamKeys, 1400)
@@ -355,6 +365,8 @@ func (c *Config) ApplyProfile() {
 		c.MaxSurfaceInputs = minInt(c.MaxSurfaceInputs, 140)
 		c.MaxSurfaceURLs = minInt(c.MaxSurfaceURLs, 22000)
 		c.MaxSurfaceRows = minInt(c.MaxSurfaceRows, 15000)
+		c.MaxJSFiles = minInt(c.MaxJSFiles, 24)
+		c.MaxJSDiscoveries = minInt(c.MaxJSDiscoveries, 800)
 		c.MaxContentHosts = minInt(c.MaxContentHosts, 24)
 		c.MaxContentRows = minInt(c.MaxContentRows, 2500)
 		c.MaxParamKeys = minInt(c.MaxParamKeys, 600)
@@ -530,6 +542,12 @@ func (c *Config) Normalize() error {
 	}
 	if c.MaxSurfaceRows < 1 {
 		c.MaxSurfaceRows = 1
+	}
+	if c.MaxJSFiles < 1 {
+		c.MaxJSFiles = 1
+	}
+	if c.MaxJSDiscoveries < 1 {
+		c.MaxJSDiscoveries = 1
 	}
 	if c.MaxContentHosts < 1 {
 		c.MaxContentHosts = 1

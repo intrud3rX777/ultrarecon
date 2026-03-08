@@ -24,6 +24,7 @@ Each phase can run independently or as part of a full pipeline.
 - Service discovery with `naabu`, `httpx`, and `tlsx`
 - Visual validation with screenshots for final live subdomains
 - URL and endpoint collection from crawlers and archive sources
+- JavaScript analysis for extra endpoints and in-scope hosts
 - Content discovery with `ffuf`
 - Automated security checks with `nuclei`
 - Clean final reports by default
@@ -87,6 +88,7 @@ Final outputs:
 
 - `surface_urls.txt`
 - `surface_endpoints.jsonl`
+- `js_analysis.jsonl`
 
 ### Phase 4: Content Discovery
 
@@ -99,6 +101,7 @@ This phase expands the reachable attack surface:
 Final outputs:
 
 - `content_paths.jsonl`
+- `ffuf_results.jsonl`
 - `param_keys.txt`
 
 ### Phase 5: Security Checks
@@ -309,6 +312,9 @@ Resume from a specific previously checkpointed stage:
 - `--max-screenshot-targets`: cap how many live URLs are captured
 - `--screenshot-concurrency`: parallel screenshot workers
 - `--screenshot-timeout`: timeout per screenshot
+- `--js-analysis`: analyze JavaScript files discovered during surface mapping
+- `--max-js-files`: cap JavaScript files fetched for analysis
+- `--max-js-discoveries`: cap URLs/endpoints retained from JavaScript analysis
 
 ## Supported Module Names
 
@@ -327,6 +333,7 @@ Resume from a specific previously checkpointed stage:
 - `gotator`
 - `service-discovery`
 - `surface-mapping`
+- `js-analysis`
 - `content-discovery`
 - `security-checks`
 - `http-probe`
@@ -342,7 +349,8 @@ By default UltraRecon writes only clean, final artifacts:
 - `scored_subdomains.jsonl`
 - `service_assets.jsonl` when service discovery is enabled
 - `surface_urls.txt` and `surface_endpoints.jsonl` when surface mapping is enabled
-- `content_paths.jsonl` and `param_keys.txt` when content discovery is enabled
+- `js_analysis.jsonl` when JavaScript analysis is enabled
+- `content_paths.jsonl`, `ffuf_results.jsonl`, and `param_keys.txt` when content discovery is enabled
 - `security_findings.jsonl` when security checks are enabled
 - `screenshots.jsonl`, `screenshots_gallery.html`, and `screenshots/` when screenshots are enabled
 - `passive_diagnostics.jsonl` when `--diagnostics` is enabled
