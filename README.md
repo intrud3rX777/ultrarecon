@@ -22,10 +22,12 @@ Each phase can run independently or as part of a full pipeline.
 - Root bruteforce, recursive bruteforce, gotator mutations, and DNS pivots
 - ASN and CIDR-based discovery with PTR enrichment
 - Service discovery with `naabu`, `httpx`, and `tlsx`
+- Visual validation with screenshots for final live subdomains
 - URL and endpoint collection from crawlers and archive sources
 - Content discovery with `ffuf`
 - Automated security checks with `nuclei`
 - Clean final reports by default
+- Stage-by-stage progress output by default, with exact command traces under `-v`
 - Optional passive-source diagnostics with explicit skip, fail, and downgrade reasons
 - Windows and Linux support
 - Auto-install of supported dependencies with `--install-tools`
@@ -61,6 +63,16 @@ This phase takes resolved hosts and identifies exposed services:
 Final output:
 
 - `service_assets.jsonl`
+
+### Visual Validation
+
+After live HTTP probing, UltraRecon can capture screenshots for final live subdomains using a local Chromium-based browser.
+
+Final outputs:
+
+- `screenshots.jsonl`
+- `screenshots_gallery.html`
+- `screenshots/`
 
 ### Phase 3: Surface Mapping
 
@@ -145,6 +157,8 @@ Windows PowerShell:
 
 This only installs missing supported tools. Existing tools are reused.
 
+Screenshot capture requires a local Chromium-based browser at runtime. UltraRecon will use Chrome, Edge, Chromium, or Brave if one is present. You can also point it explicitly with `CHROME_PATH`.
+
 ## First-Run Provider Setup
 
 On the first interactive run, UltraRecon can prompt for optional API keys and tokens used by provider-backed passive sources.
@@ -187,7 +201,7 @@ Run only subdomain enumeration:
 Run later phases from an existing subdomain list:
 
 ```bash
-./ultrarecon -d example.com --phase probe --subdomains-in final_subdomains.txt --modules service-discovery,surface-mapping,content-discovery,security-checks,http-probe -v
+./ultrarecon -d example.com --phase probe --subdomains-in final_subdomains.txt --modules service-discovery,surface-mapping,content-discovery,security-checks,http-probe,screenshots -v
 ```
 
 Windows PowerShell equivalents:
@@ -195,7 +209,7 @@ Windows PowerShell equivalents:
 ```powershell
 .\ultrarecon.exe -d example.com --phase all --install-tools -v
 .\ultrarecon.exe -d example.com --phase subdomains -o out_subs -v
-.\ultrarecon.exe -d example.com --phase probe --subdomains-in final_subdomains.txt --modules service-discovery,surface-mapping,content-discovery,security-checks,http-probe -v
+.\ultrarecon.exe -d example.com --phase probe --subdomains-in final_subdomains.txt --modules service-discovery,surface-mapping,content-discovery,security-checks,http-probe,screenshots -v
 ```
 
 Resume an interrupted run from the latest checkpoint in the same output directory:
@@ -228,6 +242,12 @@ Resume from a specific previously checkpointed stage:
 
 ```bash
 ./ultrarecon -d example.com --phase probe --subdomains-in final_subdomains.txt --modules service-discovery,http-probe -v
+```
+
+### Live Host Screenshots Only
+
+```bash
+./ultrarecon -d example.com --phase probe --subdomains-in final_subdomains.txt --modules http-probe,screenshots -v
 ```
 
 ### Phases 3, 4, and 5
@@ -280,11 +300,15 @@ Resume from a specific previously checkpointed stage:
 - `--final-only`: write only final artifacts
 - `--resume`: continue from the latest saved checkpoint in the output directory
 - `--resume-from`: restart from a specific previously checkpointed stage
-- `-v`, `--verbose`: show stage-by-stage execution
+- `-v`, `--verbose`: show exact command traces in addition to stage progress
 - `--profile`: `speed`, `balanced`, or `strict`
 - `--home-safe`: safer limits for home or unstable links
 - `--resolvers`: custom resolver file
 - `--trickest-resolvers`: use Trickest resolver lists when no resolver file is supplied
+- `--screenshots`: capture screenshots for final live subdomains
+- `--max-screenshot-targets`: cap how many live URLs are captured
+- `--screenshot-concurrency`: parallel screenshot workers
+- `--screenshot-timeout`: timeout per screenshot
 
 ## Supported Module Names
 
@@ -306,6 +330,7 @@ Resume from a specific previously checkpointed stage:
 - `content-discovery`
 - `security-checks`
 - `http-probe`
+- `screenshots`
 - `all`
 
 ## Output Model
@@ -315,12 +340,11 @@ By default UltraRecon writes only clean, final artifacts:
 - `final_subdomains.txt`
 - `live_subdomains.txt`
 - `scored_subdomains.jsonl`
-- `service_assets.jsonl`
-- `surface_urls.txt`
-- `surface_endpoints.jsonl`
-- `content_paths.jsonl`
-- `param_keys.txt`
-- `security_findings.jsonl`
+- `service_assets.jsonl` when service discovery is enabled
+- `surface_urls.txt` and `surface_endpoints.jsonl` when surface mapping is enabled
+- `content_paths.jsonl` and `param_keys.txt` when content discovery is enabled
+- `security_findings.jsonl` when security checks are enabled
+- `screenshots.jsonl`, `screenshots_gallery.html`, and `screenshots/` when screenshots are enabled
 - `passive_diagnostics.jsonl` when `--diagnostics` is enabled
 - `summary.json`
 - `report.md`
@@ -333,6 +357,16 @@ If you want intermediate artifacts too:
 ```bash
 ./ultrarecon -d example.com --final-only=false
 ```
+
+## Progress Output
+
+UltraRecon prints clean progress by default:
+
+- planned stage count
+- current stage number and name
+- per-stage result summaries such as resolver counts, live hosts, and screenshots captured
+
+Use `-v` when you want exact external command traces in addition to the stage-level output.
 
 ## Accuracy Controls
 

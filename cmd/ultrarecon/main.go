@@ -120,6 +120,10 @@ func main() {
 	flag.IntVar(&cfg.MaxSecurityTargets, "max-security-targets", cfg.MaxSecurityTargets, "max targets fed into automated security checks")
 	flag.IntVar(&cfg.MaxSecurityFindings, "max-security-findings", cfg.MaxSecurityFindings, "max automated security findings retained")
 	flag.BoolVar(&cfg.EnableHTTPProbe, "http-probe", cfg.EnableHTTPProbe, "enable live http probing")
+	flag.BoolVar(&cfg.EnableScreenshots, "screenshots", cfg.EnableScreenshots, "capture screenshots for final live subdomains")
+	flag.IntVar(&cfg.MaxScreenshotTargets, "max-screenshot-targets", cfg.MaxScreenshotTargets, "max live urls captured in the screenshot stage")
+	flag.IntVar(&cfg.ScreenshotConcurrency, "screenshot-concurrency", cfg.ScreenshotConcurrency, "parallel screenshot workers")
+	flag.DurationVar(&cfg.ScreenshotTimeout, "screenshot-timeout", cfg.ScreenshotTimeout, "timeout per screenshot capture")
 	flag.BoolVar(&cfg.StrictValidation, "strict", cfg.StrictValidation, "force stricter multi-resolver validation")
 	flag.BoolVar(&cfg.EnableDiagnostics, "diagnostics", cfg.EnableDiagnostics, "print and save passive-source diagnostics")
 	flag.BoolVar(&cfg.Verbose, "v", cfg.Verbose, "verbose console logs")
@@ -159,12 +163,14 @@ func main() {
 			cfg.Phase, cfg.Profile, cfg.HomeSafe, cfg.FinalOnly, cfg.Resume, cfg.ResumeFrom, runSetup, forceSetup, cfg.EnableDiagnostics, installTools, installOptional)
 		fmt.Printf("[verbose] dns max_resolvers=%d max_pool=%d trickest=%v resolver_fetch_timeout=%s\n",
 			cfg.MaxResolvers, cfg.MaxResolverPool, cfg.EnableTrickestResolvers, cfg.ResolverFetchTimeout)
-		fmt.Printf("[verbose] modules passive=%v noerror=%v dns_pivot=%v asn=%v zone_transfer=%v brute=%v recursive=%v recursive_brute=%v enrichment=%v analytics=%v scraping=%v permutations=%v gotator=%v service=%v surface=%v content=%v security=%v http_probe=%v\n",
+		fmt.Printf("[verbose] modules passive=%v noerror=%v dns_pivot=%v asn=%v zone_transfer=%v brute=%v recursive=%v recursive_brute=%v enrichment=%v analytics=%v scraping=%v permutations=%v gotator=%v service=%v surface=%v content=%v security=%v http_probe=%v screenshots=%v\n",
 			cfg.EnablePassive, cfg.EnableNoerror, cfg.EnableDNSPivot, cfg.EnableASNExpansion, cfg.EnableZoneTransfer,
 			cfg.EnableBruteforce, cfg.EnableRecursive, cfg.EnableRecursiveBrute,
 			(cfg.EnableCSPExtraction || cfg.EnableArchiveSources || cfg.EnableTLSEnumeration),
 			cfg.EnableAnalyticsPivot, cfg.EnableScrapingPivot, cfg.EnablePermutations, cfg.EnableGotator, cfg.EnableServiceDiscovery,
-			cfg.EnableSurfaceMapping, cfg.EnableContentDiscovery, cfg.EnableSecurityChecks, cfg.EnableHTTPProbe)
+			cfg.EnableSurfaceMapping, cfg.EnableContentDiscovery, cfg.EnableSecurityChecks, cfg.EnableHTTPProbe, cfg.EnableScreenshots)
+		fmt.Printf("[verbose] screenshots targets=%d concurrency=%d timeout=%s\n",
+			cfg.MaxScreenshotTargets, cfg.ScreenshotConcurrency, cfg.ScreenshotTimeout)
 	}
 
 	if installTools {
@@ -197,6 +203,9 @@ func main() {
 	fmt.Printf("phase: %s\n", cfg.Phase)
 	fmt.Printf("final_resolved: %d\n", summary.FinalResolved)
 	fmt.Printf("live_hosts: %d\n", summary.LiveHosts)
+	if cfg.EnableScreenshots {
+		fmt.Printf("screenshots: %d/%d\n", summary.ScreenshotsCaptured, summary.ScreenshotTargets)
+	}
 	fmt.Printf("duration: %s\n", summary.Duration)
 	fmt.Printf("output: %s\n", summary.OutputDir)
 	fmt.Printf("host: %s/%s\n", runtime.GOOS, runtime.GOARCH)
@@ -226,6 +235,7 @@ func applyPhaseDefaults(cfg *config.Config) {
 		cfg.EnableContentDiscovery = true
 		cfg.EnableSecurityChecks = true
 		cfg.EnableHTTPProbe = true
+		cfg.EnableScreenshots = true
 	}
 }
 
@@ -268,6 +278,7 @@ func applyModuleSelection(cfg *config.Config, raw string) error {
 	cfg.EnableContentDiscovery = false
 	cfg.EnableSecurityChecks = false
 	cfg.EnableHTTPProbe = false
+	cfg.EnableScreenshots = false
 
 	phase := normalizePhaseCLI(cfg.Phase)
 	for m := range set {
@@ -279,6 +290,7 @@ func applyModuleSelection(cfg *config.Config, raw string) error {
 				cfg.EnableContentDiscovery = true
 				cfg.EnableSecurityChecks = true
 				cfg.EnableHTTPProbe = true
+				cfg.EnableScreenshots = true
 			} else {
 				cfg.EnablePassive = true
 				cfg.EnableNoerror = true
@@ -300,6 +312,7 @@ func applyModuleSelection(cfg *config.Config, raw string) error {
 				cfg.EnableContentDiscovery = true
 				cfg.EnableSecurityChecks = true
 				cfg.EnableHTTPProbe = true
+				cfg.EnableScreenshots = true
 			}
 		case "passive":
 			if phase == "probe" {
@@ -393,6 +406,8 @@ func applyModuleSelection(cfg *config.Config, raw string) error {
 			cfg.EnableSecurityChecks = true
 		case "http-probe", "probe", "live":
 			cfg.EnableHTTPProbe = true
+		case "screenshot", "screenshots", "visual":
+			cfg.EnableScreenshots = true
 		default:
 			return fmt.Errorf("unknown module %q", m)
 		}

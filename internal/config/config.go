@@ -78,6 +78,7 @@ type Config struct {
 	EnableContentDiscovery  bool
 	EnableSecurityChecks    bool
 	EnableHTTPProbe         bool
+	EnableScreenshots       bool
 	MaxPermutations         int
 	PermutationTopLabels    int
 	GotatorDepth            int
@@ -96,6 +97,9 @@ type Config struct {
 	ContentRate             int
 	MaxSecurityTargets      int
 	MaxSecurityFindings     int
+	MaxScreenshotTargets    int
+	ScreenshotConcurrency   int
+	ScreenshotTimeout       time.Duration
 	MaxPassivePerSource     int
 	MaxPassiveCandidates    int
 	MaxResolveQueue         int
@@ -184,6 +188,7 @@ func Default() Config {
 		EnableContentDiscovery:  true,
 		EnableSecurityChecks:    true,
 		EnableHTTPProbe:         true,
+		EnableScreenshots:       true,
 		MaxPermutations:         220000,
 		PermutationTopLabels:    220,
 		GotatorDepth:            1,
@@ -202,6 +207,9 @@ func Default() Config {
 		ContentRate:             220,
 		MaxSecurityTargets:      1200,
 		MaxSecurityFindings:     5000,
+		MaxScreenshotTargets:    120,
+		ScreenshotConcurrency:   4,
+		ScreenshotTimeout:       18 * time.Second,
 		MaxPassivePerSource:     6000,
 		MaxPassiveCandidates:    25000,
 		MaxResolveQueue:         20000,
@@ -256,6 +264,8 @@ func (c *Config) ApplyProfile() {
 		c.ContentRate = maxInt(c.ContentRate, 500)
 		c.MaxSecurityTargets = maxInt(c.MaxSecurityTargets, 2200)
 		c.MaxSecurityFindings = maxInt(c.MaxSecurityFindings, 9000)
+		c.MaxScreenshotTargets = maxInt(c.MaxScreenshotTargets, 240)
+		c.ScreenshotConcurrency = maxInt(c.ScreenshotConcurrency, 6)
 	case "strict":
 		c.DNSThreads = minInt(c.DNSThreads, 500)
 		c.HTTPThreads = minInt(c.HTTPThreads, 250)
@@ -298,6 +308,8 @@ func (c *Config) ApplyProfile() {
 		c.ContentRate = minInt(c.ContentRate, 160)
 		c.MaxSecurityTargets = minInt(c.MaxSecurityTargets, 900)
 		c.MaxSecurityFindings = minInt(c.MaxSecurityFindings, 3000)
+		c.MaxScreenshotTargets = minInt(c.MaxScreenshotTargets, 100)
+		c.ScreenshotConcurrency = minInt(c.ScreenshotConcurrency, 3)
 	default:
 		// balanced
 	}
@@ -349,6 +361,8 @@ func (c *Config) ApplyProfile() {
 		c.ContentRate = minInt(c.ContentRate, 80)
 		c.MaxSecurityTargets = minInt(c.MaxSecurityTargets, 300)
 		c.MaxSecurityFindings = minInt(c.MaxSecurityFindings, 1200)
+		c.MaxScreenshotTargets = minInt(c.MaxScreenshotTargets, 60)
+		c.ScreenshotConcurrency = minInt(c.ScreenshotConcurrency, 2)
 	}
 }
 
@@ -534,6 +548,18 @@ func (c *Config) Normalize() error {
 	}
 	if c.MaxSecurityFindings < 1 {
 		c.MaxSecurityFindings = 1
+	}
+	if c.MaxScreenshotTargets < 1 {
+		c.MaxScreenshotTargets = 1
+	}
+	if c.ScreenshotConcurrency < 1 {
+		c.ScreenshotConcurrency = 1
+	}
+	if c.ScreenshotConcurrency > 16 {
+		c.ScreenshotConcurrency = 16
+	}
+	if c.ScreenshotTimeout < 5*time.Second {
+		c.ScreenshotTimeout = 5 * time.Second
 	}
 	if c.MaxPassivePerSource < 100 {
 		c.MaxPassivePerSource = 100

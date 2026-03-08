@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ultrarecon/internal/config"
@@ -47,7 +48,11 @@ func runHTTPProbe(ctx context.Context, cfg config.Config, store *SafeStore, host
 	if workers < 1 {
 		workers = 1
 	}
-	liveCh := make(chan string, len(hosts))
+	var processed int64
+	var live int64
+	logf("[http] probing targets=%d workers=%d timeout=%s", len(hosts), workers, cfg.HTTPTimeout.Round(time.Millisecond))
+	progressDone := make(chan struct{})
+	go reportHTTPProbeProgress(progressDone, len(hosts), &processed, &live, logf)
 
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
@@ -59,23 +64,17 @@ func runHTTPProbe(ctx context.Context, cfg config.Config, store *SafeStore, host
 				}
 				if url, ok := probeHost(ctx, client, host); ok {
 					store.MarkLive(host, url)
-					liveCh <- host
+					atomic.AddInt64(&live, 1)
 				}
+				atomic.AddInt64(&processed, 1)
 			}
 		}()
 	}
-
-	go func() {
-		wg.Wait()
-		close(liveCh)
-	}()
-
-	live := 0
-	for range liveCh {
-		live++
-	}
-	logf("[http] live=%d/%d", live, len(hosts))
-	return live
+	wg.Wait()
+	close(progressDone)
+	finalLive := int(atomic.LoadInt64(&live))
+	logf("[http] live=%d/%d", finalLive, len(hosts))
+	return finalLive
 }
 
 func probeHost(ctx context.Context, client *http.Client, host string) (string, bool) {
@@ -97,4 +96,24 @@ func probeHost(ctx context.Context, client *http.Client, host string) (string, b
 		}
 	}
 	return "", false
+}
+
+func reportHTTPProbeProgress(done <-chan struct{}, total int, processed *int64, live *int64, logf func(string, ...any)) {
+	if total <= 0 {
+		return
+	}
+	ticker := time.NewTicker(4 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			p := int(atomic.LoadInt64(processed))
+			if p == 0 || p >= total {
+				continue
+			}
+			logf("[http] progress=%d/%d live=%d", p, total, int(atomic.LoadInt64(live)))
+		}
+	}
 }

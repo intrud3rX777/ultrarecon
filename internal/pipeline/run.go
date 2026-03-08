@@ -51,6 +51,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 	var contentRows []ContentRow
 	var paramKeys []string
 	var securityFindings []SecurityFinding
+	var screenshotRows []ScreenshotRow
 	var resolvers []dnsResolver
 
 	checkpoint, err := loadResumeCheckpoint(cfg)
@@ -91,6 +92,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		contentRows = append([]ContentRow(nil), checkpoint.Artifacts.ContentRows...)
 		paramKeys = append([]string(nil), checkpoint.Artifacts.ParamKeys...)
 		securityFindings = append([]SecurityFinding(nil), checkpoint.Artifacts.SecurityFindings...)
+		screenshotRows = append([]ScreenshotRow(nil), checkpoint.Artifacts.ScreenshotRows...)
 		resolvers = restoreCheckpointResolvers(checkpoint.Resolvers)
 		completedStages = checkpointCompletedStages(summary)
 	}
@@ -102,6 +104,13 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 	defer closeLog()
 
 	logf("ultrarecon started domain=%s output=%s", cfg.Domain, cfg.OutputDir)
+	stagePlan := buildStagePlan(cfg)
+	logf("[plan] stages=%d", len(stagePlan))
+	if cfg.Verbose {
+		for i, name := range stagePlan {
+			logf("[plan] %02d %s", i+1, name)
+		}
+	}
 	if checkpoint != nil {
 		logf("[resume] loaded checkpoint stage=%s completed=%d", checkpoint.CurrentStage, len(summary.Stages))
 		if _, ok := completedStages["write_artifacts"]; ok && strings.TrimSpace(cfg.ResumeFrom) == "" {
@@ -130,15 +139,17 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			ContentRows:         contentRows,
 			ParamKeys:           paramKeys,
 			SecurityFindings:    securityFindings,
+			ScreenshotRows:      screenshotRows,
 		}
 	}
 
 	stage := func(name string, fn func() error) error {
+		label := stageLabel(stagePlan, name)
 		if _, ok := completedStages[name]; ok {
-			logf("[stage] skip  %s (resume)", name)
+			logf("%s skip  %s (resume)", label, name)
 			return nil
 		}
-		logf("[stage] start %s", name)
+		logf("%s start %s", label, name)
 		s := time.Now()
 		err := fn()
 		dur := time.Since(s).Round(time.Millisecond)
@@ -149,18 +160,21 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		if err != nil {
 			st.Details = err.Error()
 			summary.Stages = append(summary.Stages, st)
-			logf("[stage] fail  %s (%s): %v", name, dur, err)
+			logf("%s fail  %s (%s): %v", label, name, dur, err)
 			return err
 		}
 		summary.Stages = append(summary.Stages, st)
 		if saveErr := saveCheckpointState(cfg, name, summary, store, toolErrs, resolvers, currentArtifacts()); saveErr != nil {
 			summary.Stages[len(summary.Stages)-1].Details = saveErr.Error()
-			logf("[stage] fail  %s (%s): %v", name, dur, saveErr)
+			logf("%s fail  %s (%s): %v", label, name, dur, saveErr)
 			return fmt.Errorf("save checkpoint after %s: %w", name, saveErr)
 		}
 		completedStages[name] = struct{}{}
-		logf("[stage] done  %s (%s)", name, dur)
+		logf("%s done  %s (%s)", label, name, dur)
 		return nil
+	}
+	skipStage := func(name string, reason string) {
+		logf("%s skip  %s (%s)", stageLabel(stagePlan, name), name, reason)
 	}
 
 	if cfg.Phase == "probe" {
@@ -220,6 +234,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		}); err != nil {
 			return nil, err
 		}
+	} else {
+		skipStage("initial_dns_resolve", "no hosts queued")
+		skipStage("wildcard_filter_initial", "no resolved hosts")
 	}
 
 	if cfg.Phase != "probe" && cfg.EnableNoerror {
@@ -247,6 +264,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("noerror_dns_resolve", "no candidates")
+			skipStage("wildcard_filter_noerror", "no resolved candidates")
 		}
 	}
 
@@ -275,6 +295,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("dns_pivot_resolve", "no candidates")
+			skipStage("wildcard_filter_dns_pivot", "no resolved candidates")
 		}
 	}
 
@@ -303,6 +326,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("asn_cidr_resolve", "no candidates")
+			skipStage("wildcard_filter_asn_cidr", "no resolved candidates")
 		}
 	}
 
@@ -331,6 +357,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("zone_transfer_resolve", "no candidates")
+			skipStage("wildcard_filter_zone_transfer", "no resolved candidates")
 		}
 	}
 
@@ -359,6 +388,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("bruteforce_dns_resolve", "no candidates")
+			skipStage("wildcard_filter_bruteforce", "no resolved candidates")
 		}
 	}
 
@@ -387,6 +419,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("recursive_dns_resolve", "no candidates")
+			skipStage("wildcard_filter_recursive", "no resolved candidates")
 		}
 	}
 
@@ -415,6 +450,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("recursive_bruteforce_resolve", "no candidates")
+			skipStage("wildcard_filter_recursive_bruteforce", "no resolved candidates")
 		}
 	}
 
@@ -444,6 +482,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("enrichment_dns_resolve", "no candidates")
+			skipStage("wildcard_filter_enrichment", "no resolved candidates")
 		}
 	}
 
@@ -472,6 +513,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("analytics_pivot_resolve", "no candidates")
+			skipStage("wildcard_filter_analytics", "no resolved candidates")
 		}
 	}
 
@@ -494,7 +538,6 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
-
 			if err := stage("wildcard_filter_permutation", func() error {
 				wild := detectWildcardParents(ctx, cfg, store, resolvers, logf)
 				summary.WildcardFiltered += applyWildcardFilter(store, cfg, wild)
@@ -502,6 +545,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("permutation_dns_resolve", "no candidates")
+			skipStage("wildcard_filter_permutation", "no resolved candidates")
 		}
 	}
 
@@ -530,6 +576,9 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			}); err != nil {
 				return nil, err
 			}
+		} else {
+			skipStage("gotator_dns_resolve", "no candidates")
+			skipStage("wildcard_filter_gotator", "no resolved candidates")
 		}
 	}
 
@@ -559,6 +608,8 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		}); err != nil {
 			return nil, err
 		}
+	} else if cfg.EnableHTTPProbe {
+		skipStage("http_probe_initial", "no resolved hosts")
 	}
 
 	if cfg.Phase != "probe" && cfg.EnableScrapingPivot {
@@ -593,6 +644,12 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 				}); err != nil {
 					return nil, err
 				}
+			}
+		} else {
+			skipStage("scraping_pivot_resolve", "no candidates")
+			skipStage("wildcard_filter_scraping", "no resolved candidates")
+			if cfg.EnableHTTPProbe {
+				skipStage("http_probe_scraping", "no resolved candidates")
 			}
 		}
 	}
@@ -630,6 +687,18 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 		}
 	}
 
+	if cfg.EnableScreenshots {
+		if err := stage("screenshots", func() error {
+			screenshotRows = runScreenshots(ctx, cfg, store, &toolErrs, logf)
+			summary.ScreenshotTargets = len(screenshotRows)
+			summary.ScreenshotsCaptured = countCapturedScreenshots(screenshotRows)
+			summary.ScreenshotFailures = summary.ScreenshotTargets - summary.ScreenshotsCaptured
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	finalResolved := finalResolvedNames(store)
 	summary.FinalResolved = len(finalResolved)
 	summary.LiveHosts = countLiveHosts(store)
@@ -645,7 +714,7 @@ func Execute(ctx context.Context, cfg config.Config) (*Summary, error) {
 			passiveHosts, noerrorHosts, dnsPivotHosts, asnHosts, zoneTransferHosts,
 			bruteHosts, recursiveHosts, recursiveBruteHosts,
 			enrichmentHosts, analyticsHosts, scrapingHosts, permutations, gotatorHosts, serviceRows,
-			surfaceRows, contentRows, paramKeys, securityFindings, summary,
+			surfaceRows, contentRows, paramKeys, securityFindings, screenshotRows, summary,
 		)
 	}); err != nil {
 		return nil, err
@@ -676,9 +745,7 @@ func initLogger(outputDir string, verbose bool, diagnostics bool, appendMode boo
 	logf := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
 		logger.Println(msg)
-		if verbose {
-			fmt.Println(msg)
-		}
+		fmt.Println(msg)
 	}
 	diagf := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
@@ -809,6 +876,99 @@ func countHighCritical(rows []SecurityFinding) int {
 	return total
 }
 
+func countCapturedScreenshots(rows []ScreenshotRow) int {
+	total := 0
+	for _, r := range rows {
+		if strings.EqualFold(strings.TrimSpace(r.Status), "captured") {
+			total++
+		}
+	}
+	return total
+}
+
+func buildStagePlan(cfg config.Config) []string {
+	stages := make([]string, 0, 48)
+	if cfg.Phase == "probe" {
+		stages = append(stages, "load_input_subdomains")
+	} else if cfg.EnablePassive {
+		stages = append(stages, "passive_collection")
+	}
+	stages = append(stages, "resolver_selection", "initial_dns_resolve", "wildcard_filter_initial")
+	if cfg.Phase != "probe" && cfg.EnableNoerror {
+		stages = append(stages, "noerror_collection", "noerror_dns_resolve", "wildcard_filter_noerror")
+	}
+	if cfg.Phase != "probe" && cfg.EnableDNSPivot {
+		stages = append(stages, "dns_pivot_collection", "dns_pivot_resolve", "wildcard_filter_dns_pivot")
+	}
+	if cfg.Phase != "probe" && cfg.EnableASNExpansion {
+		stages = append(stages, "asn_cidr_collection", "asn_cidr_resolve", "wildcard_filter_asn_cidr")
+	}
+	if cfg.Phase != "probe" && cfg.EnableZoneTransfer {
+		stages = append(stages, "zone_transfer_collection", "zone_transfer_resolve", "wildcard_filter_zone_transfer")
+	}
+	if cfg.Phase != "probe" && cfg.EnableBruteforce {
+		stages = append(stages, "bruteforce_collection", "bruteforce_dns_resolve", "wildcard_filter_bruteforce")
+	}
+	if cfg.Phase != "probe" && cfg.EnableRecursive {
+		stages = append(stages, "recursive_passive_collection", "recursive_dns_resolve", "wildcard_filter_recursive")
+	}
+	if cfg.Phase != "probe" && cfg.EnableRecursiveBrute {
+		stages = append(stages, "recursive_bruteforce_collection", "recursive_bruteforce_resolve", "wildcard_filter_recursive_bruteforce")
+	}
+	if cfg.Phase != "probe" && (cfg.EnableCSPExtraction || cfg.EnableArchiveSources || cfg.EnableTLSEnumeration) {
+		stages = append(stages, "enrichment_collection", "enrichment_dns_resolve", "wildcard_filter_enrichment")
+	}
+	if cfg.Phase != "probe" && cfg.EnableAnalyticsPivot {
+		stages = append(stages, "analytics_pivot_collection", "analytics_pivot_resolve", "wildcard_filter_analytics")
+	}
+	if cfg.Phase != "probe" && cfg.EnablePermutations {
+		stages = append(stages, "permutation_generation", "permutation_dns_resolve", "wildcard_filter_permutation")
+	}
+	if cfg.Phase != "probe" && cfg.EnableGotator {
+		stages = append(stages, "gotator_collection", "gotator_dns_resolve", "wildcard_filter_gotator")
+	}
+	if cfg.EnableServiceDiscovery {
+		stages = append(stages, "service_discovery")
+	}
+	if cfg.EnableHTTPProbe {
+		stages = append(stages, "http_probe_initial")
+	}
+	if cfg.Phase != "probe" && cfg.EnableScrapingPivot {
+		stages = append(stages, "scraping_pivot_collection", "scraping_pivot_resolve", "wildcard_filter_scraping")
+		if cfg.EnableHTTPProbe {
+			stages = append(stages, "http_probe_scraping")
+		}
+	}
+	if cfg.EnableSurfaceMapping {
+		stages = append(stages, "surface_mapping")
+	}
+	if cfg.EnableContentDiscovery {
+		stages = append(stages, "content_discovery")
+	}
+	if cfg.EnableSecurityChecks {
+		stages = append(stages, "security_checks")
+	}
+	if cfg.EnableScreenshots {
+		stages = append(stages, "screenshots")
+	}
+	stages = append(stages, "write_artifacts")
+	return stages
+}
+
+func stageLabel(plan []string, name string) string {
+	total := len(plan)
+	if total == 0 {
+		return "[stage]"
+	}
+	needle := strings.ToLower(strings.TrimSpace(name))
+	for i, stage := range plan {
+		if strings.ToLower(strings.TrimSpace(stage)) == needle {
+			return fmt.Sprintf("[stage %02d/%02d]", i+1, total)
+		}
+	}
+	return fmt.Sprintf("[stage ??/%02d]", total)
+}
+
 func hasAnySubdomainModuleEnabled(cfg config.Config) bool {
 	return cfg.EnablePassive ||
 		cfg.EnableNoerror ||
@@ -825,6 +985,8 @@ func hasAnySubdomainModuleEnabled(cfg config.Config) bool {
 		cfg.EnablePermutations ||
 		cfg.EnableGotator ||
 		cfg.EnableServiceDiscovery ||
+		cfg.EnableHTTPProbe ||
+		cfg.EnableScreenshots ||
 		cfg.EnableSurfaceMapping ||
 		cfg.EnableContentDiscovery ||
 		cfg.EnableSecurityChecks ||

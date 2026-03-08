@@ -69,6 +69,9 @@ type Summary struct {
 	ParamKeys               int                          `json:"param_keys"`
 	SecurityFindings        int                          `json:"security_findings"`
 	SecurityHighCritical    int                          `json:"security_high_critical"`
+	ScreenshotTargets       int                          `json:"screenshot_targets"`
+	ScreenshotsCaptured     int                          `json:"screenshots_captured"`
+	ScreenshotFailures      int                          `json:"screenshot_failures"`
 	FinalResolved           int                          `json:"final_resolved"`
 	LiveHosts               int                          `json:"live_hosts"`
 	SelectedResolvers       int                          `json:"selected_resolvers"`
@@ -135,4 +138,14 @@ type SecurityFinding struct {
 	Severity   string `json:"severity,omitempty"`
 	Type       string `json:"type,omitempty"`
 	Source     string `json:"source"`
+}
+
+type ScreenshotRow struct {
+	Host   string `json:"host"`
+	URL    string `json:"url"`
+	File   string `json:"file,omitempty"`
+	Title  string `json:"title,omitempty"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+	Source string `json:"source"`
 }
