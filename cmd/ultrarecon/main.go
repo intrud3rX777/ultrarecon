@@ -45,6 +45,7 @@ func main() {
 	flag.DurationVar(&cfg.ToolTimeout, "tool-timeout", cfg.ToolTimeout, "timeout per external tool/API collector")
 	flag.DurationVar(&cfg.BruteTimeout, "brute-timeout", cfg.BruteTimeout, "bruteforce/enrichment external tool timeout")
 	flag.DurationVar(&cfg.HTTPTimeout, "http-timeout", cfg.HTTPTimeout, "http probe timeout per request")
+	flag.DurationVar(&cfg.SecurityTimeout, "security-timeout", cfg.SecurityTimeout, "timeout per nuclei security-check attempt")
 	flag.DurationVar(&cfg.DNSQueryTimeout, "dns-timeout", cfg.DNSQueryTimeout, "dns query timeout")
 	flag.DurationVar(&cfg.ResolverFetchTimeout, "resolver-fetch-timeout", cfg.ResolverFetchTimeout, "timeout for downloading resolver lists")
 
@@ -174,6 +175,7 @@ func main() {
 			cfg.EnableSurfaceMapping, cfg.EnableJSAnalysis, cfg.EnableContentDiscovery, cfg.EnableSecurityChecks, cfg.EnableHTTPProbe, cfg.EnableScreenshots)
 		fmt.Printf("[verbose] screenshots targets=%d concurrency=%d timeout=%s\n",
 			cfg.MaxScreenshotTargets, cfg.ScreenshotConcurrency, cfg.ScreenshotTimeout)
+		fmt.Printf("[verbose] content_rate=%d security_timeout=%s\n", cfg.ContentRate, cfg.SecurityTimeout)
 	}
 
 	if installTools {

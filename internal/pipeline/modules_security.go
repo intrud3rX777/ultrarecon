@@ -49,6 +49,7 @@ func runSecurityChecks(
 	findings, runErr := runNucleiChecks(ctx, cfg, targetFile, logf)
 	if runErr != nil {
 		*toolErrs = append(*toolErrs, ToolError{Stage: "security_checks", Tool: "nuclei", Error: runErr.Error()})
+		logf("[security] nuclei failed: %v", runErr)
 	}
 	findings = dedupeFindings(findings, cfg.MaxSecurityFindings)
 	for _, f := range findings {
@@ -65,6 +66,10 @@ func runSecurityChecks(
 }
 
 func runNucleiChecks(ctx context.Context, cfg config.Config, targetFile string, logf func(string, ...any)) ([]SecurityFinding, error) {
+	timeout := cfg.SecurityTimeout
+	if timeout <= 0 {
+		timeout = 12 * time.Minute
+	}
 	attempts := [][]string{
 		{
 			"-l", targetFile,
@@ -104,8 +109,8 @@ func runNucleiChecks(ctx context.Context, cfg config.Config, targetFile string, 
 		prepared bool
 	)
 	for _, args := range attempts {
-		subCtx, cancel := context.WithTimeout(ctx, minDuration(cfg.BruteTimeout, 6*time.Minute))
-		res := util.RunCommand(subCtx, minDuration(cfg.BruteTimeout, 6*time.Minute), "nuclei", args...)
+		subCtx, cancel := context.WithTimeout(ctx, timeout)
+		res := util.RunCommand(subCtx, timeout, "nuclei", args...)
 		cancel()
 		if nucleiNeedsTemplates(res.Stdout, res.Stderr) && !prepared {
 			prepared = true
@@ -135,6 +140,10 @@ func runNucleiChecks(ctx context.Context, cfg config.Config, targetFile string, 
 
 func ensureNucleiTemplates(ctx context.Context, cfg config.Config, logf func(string, ...any)) error {
 	logf("[security] initializing nuclei templates")
+	timeout := minDuration(cfg.SecurityTimeout, 8*time.Minute)
+	if timeout < 2*time.Minute {
+		timeout = 2 * time.Minute
+	}
 	attempts := [][]string{
 		{"-ut", "-duc"},
 		{"-update-templates", "-duc"},
@@ -143,8 +152,8 @@ func ensureNucleiTemplates(ctx context.Context, cfg config.Config, logf func(str
 	}
 	var lastErr error
 	for _, args := range attempts {
-		subCtx, cancel := context.WithTimeout(ctx, minDuration(cfg.BruteTimeout, 4*time.Minute))
-		res := util.RunCommand(subCtx, minDuration(cfg.BruteTimeout, 4*time.Minute), "nuclei", args...)
+		subCtx, cancel := context.WithTimeout(ctx, timeout)
+		res := util.RunCommand(subCtx, timeout, "nuclei", args...)
 		cancel()
 		if res.Err == nil {
 			logf("[security] nuclei templates ready")
@@ -173,6 +182,12 @@ func nucleiNeedsTemplates(stdout, stderr string) bool {
 func summarizeToolFailure(err error, stderr string) error {
 	if msg := strings.TrimSpace(stderr); msg != "" {
 		return errors.New(msg)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("timeout exceeded")
+	}
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "deadline exceeded") {
+		return fmt.Errorf("timeout exceeded")
 	}
 	return err
 }

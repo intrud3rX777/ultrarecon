@@ -25,6 +25,28 @@ func TestExtractJSRelativeURLs(t *testing.T) {
 	}
 }
 
+func TestExtractJSRelativeURLsLooseAndProtocolRelative(t *testing.T) {
+	blob := `const a="api/v2/orders"; const b="//cdn.example.com/app.js"; const c="../graphql";`
+	got := extractJSRelativeURLs("https://app.example.com/static/js/app.js", normalizeJSBlob(blob))
+	want := map[string]struct{}{
+		"https://app.example.com/api/v2/orders":  {},
+		"https://cdn.example.com/app.js":         {},
+		"https://app.example.com/static/graphql": {},
+	}
+	for expected := range want {
+		found := false
+		for _, raw := range got {
+			if raw == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("extractJSRelativeURLs() missing %s in %#v", expected, got)
+		}
+	}
+}
+
 func TestExtractJSHosts(t *testing.T) {
 	blob := `window.api="https://api.example.com/v1"; window.cdn="https://cdn.other.com/x.js";`
 	got := extractJSHosts(blob, "example.com")
@@ -41,5 +63,12 @@ func TestFFUFRowsFilter(t *testing.T) {
 	got := ffufRows(rows)
 	if len(got) != 1 || got[0].Source != "ffuf" {
 		t.Fatalf("ffufRows() = %#v", got)
+	}
+}
+
+func TestNormalizeJSBlob(t *testing.T) {
+	got := normalizeJSBlob(`{"a":"\/api\/v1","b":"\u002fauth","c":"\x2fgraphql"}`)
+	if got != `{"a":"/api/v1","b":"/auth","c":"/graphql"}` {
+		t.Fatalf("normalizeJSBlob() = %q", got)
 	}
 }

@@ -17,7 +17,11 @@ import (
 	"ultrarecon/internal/util"
 )
 
-var jsPathRegex = regexp.MustCompile("[\"'`](/[A-Za-z0-9_./?&=%#:-]{2,})[\"'`]")
+var (
+	jsQuotedPathRegex    = regexp.MustCompile("[\"'`]((?:/|\\./|\\.\\./)[A-Za-z0-9_./?&=%#:@~,+-]{2,})[\"'`]")
+	jsProtoRelativeRegex = regexp.MustCompile("[\"'`](//[A-Za-z0-9.-]+(?:/[A-Za-z0-9_./?&=%#:@~,+-]*)?)[\"'`]")
+	jsLoosePathRegex     = regexp.MustCompile("[\"'`]((?:api|graphql|graph|rest|auth|admin|oauth|v[0-9]+|assets|static|content|services?|uploads?|_next|wp-json)(?:/[A-Za-z0-9_./?&=%#:@~,+-]*)?)[\"'`]")
+)
 
 type jsAnalysisResult struct {
 	row        JSAnalysisRow
@@ -171,7 +175,7 @@ func analyzeJSFile(ctx context.Context, client *http.Client, cfg config.Config, 
 		row.Error = err.Error()
 		return row, nil
 	}
-	blob := string(body)
+	blob := normalizeJSBlob(string(body))
 	absURLs := util.UniqueSorted(extractURLsFromBlob(blob))
 	pathURLs := extractJSRelativeURLs(target, blob)
 	inScopeHosts := extractJSHosts(blob, cfg.Domain)
@@ -208,20 +212,42 @@ func extractJSRelativeURLs(baseURL string, blob string) []string {
 	}
 	out := make([]string, 0, 32)
 	seen := make(map[string]struct{}, 32)
-	for _, m := range jsPathRegex.FindAllStringSubmatch(blob, -1) {
-		if len(m) < 2 {
-			continue
+	addResolved := func(raw string, forceRoot bool) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
 		}
-		ref, err := url.Parse(strings.TrimSpace(m[1]))
+		switch {
+		case strings.HasPrefix(raw, "//"):
+			raw = base.Scheme + ":" + raw
+		case forceRoot:
+			raw = "/" + strings.TrimLeft(raw, "/")
+		}
+		ref, err := url.Parse(raw)
 		if err != nil {
-			continue
+			return
 		}
 		u := base.ResolveReference(ref)
 		if _, ok := seen[u.String()]; ok {
-			continue
+			return
 		}
 		seen[u.String()] = struct{}{}
 		out = append(out, u.String())
+	}
+	for _, m := range jsQuotedPathRegex.FindAllStringSubmatch(blob, -1) {
+		if len(m) >= 2 {
+			addResolved(m[1], false)
+		}
+	}
+	for _, m := range jsProtoRelativeRegex.FindAllStringSubmatch(blob, -1) {
+		if len(m) >= 2 {
+			addResolved(m[1], false)
+		}
+	}
+	for _, m := range jsLoosePathRegex.FindAllStringSubmatch(blob, -1) {
+		if len(m) >= 2 {
+			addResolved(m[1], true)
+		}
 	}
 	sort.Strings(out)
 	return out
@@ -246,19 +272,36 @@ func extractJSHosts(blob string, domain string) []string {
 func relativePathsFromBlob(blob string) []string {
 	out := make([]string, 0, 32)
 	seen := make(map[string]struct{}, 32)
-	for _, m := range jsPathRegex.FindAllStringSubmatch(blob, -1) {
-		if len(m) < 2 {
-			continue
+	addPath := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
 		}
-		path := strings.TrimSpace(m[1])
 		if _, ok := seen[path]; ok {
-			continue
+			return
 		}
 		seen[path] = struct{}{}
 		out = append(out, path)
 	}
+	for _, m := range jsQuotedPathRegex.FindAllStringSubmatch(blob, -1) {
+		if len(m) >= 2 {
+			addPath(m[1])
+		}
+	}
+	for _, m := range jsLoosePathRegex.FindAllStringSubmatch(blob, -1) {
+		if len(m) >= 2 {
+			addPath(m[1])
+		}
+	}
 	sort.Strings(out)
 	return out
+}
+
+func normalizeJSBlob(blob string) string {
+	blob = strings.ReplaceAll(blob, `\/`, `/`)
+	blob = strings.ReplaceAll(blob, `\u002f`, `/`)
+	blob = strings.ReplaceAll(blob, `\x2f`, `/`)
+	return blob
 }
 
 func surfaceURLsFromRows(rows []SurfaceRow, limit int) []string {

@@ -108,10 +108,12 @@ func runFFUFForHost(ctx context.Context, cfg config.Config, host, wordFile strin
 		"http://" + host + "/FUZZ",
 	}
 	attemptPerTarget := [][]string{
-		{"-w", wordFile, "-ac", "-mc", "200,204,301,302,307,401,403,405", "-rate", strconv.Itoa(cfg.ContentRate), "-t", strconv.Itoa(minInt(cfg.HTTPThreads, 60)), "-of", "json"},
-		{"-w", wordFile, "-ac", "-mc", "200,204,301,302,307,401,403,405", "-rate", strconv.Itoa(cfg.ContentRate), "-of", "json"},
-		{"-w", wordFile, "-ac", "-mc", "200,204,301,302,307,401,403,405", "-of", "json"},
+		{"-w", wordFile, "-ac", "-mc", "200,204,301,302,307,401,403,405", "-rate", strconv.Itoa(cfg.ContentRate), "-t", strconv.Itoa(minInt(cfg.HTTPThreads, 60)), "-of", "json", "-noninteractive"},
+		{"-w", wordFile, "-mc", "200,204,301,302,307,401,403,405", "-rate", strconv.Itoa(cfg.ContentRate), "-t", strconv.Itoa(minInt(cfg.HTTPThreads, 60)), "-of", "json", "-noninteractive"},
+		{"-w", wordFile, "-mc", "200,204,301,302,307,401,403,405", "-rate", strconv.Itoa(cfg.ContentRate), "-of", "json", "-noninteractive"},
+		{"-w", wordFile, "-mc", "200,204,301,302,307,401,403,405", "-of", "json", "-noninteractive"},
 	}
+	var lastErr error
 
 	for _, target := range targets {
 		for _, baseArgs := range attemptPerTarget {
@@ -143,11 +145,16 @@ func runFFUFForHost(ctx context.Context, cfg config.Config, host, wordFile strin
 				continue
 			}
 			if parseErr != nil {
+				lastErr = parseErr
 				continue
 			}
+			lastErr = summarizeToolFailure(res.Err, res.Stderr)
 		}
 	}
-	return nil, fmt.Errorf("ffuf no rows for %s", host)
+	if lastErr != nil {
+		return nil, fmt.Errorf("ffuf %s: %w", host, lastErr)
+	}
+	return nil, nil
 }
 
 func parseFFUFJSON(path, host string) ([]ContentRow, error) {

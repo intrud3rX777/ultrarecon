@@ -28,6 +28,7 @@ type Config struct {
 	ToolTimeout             time.Duration
 	BruteTimeout            time.Duration
 	HTTPTimeout             time.Duration
+	SecurityTimeout         time.Duration
 	DNSQueryTimeout         time.Duration
 	ResolverFetchTimeout    time.Duration
 	DNSThreads              int
@@ -141,6 +142,7 @@ func Default() Config {
 		ToolTimeout:             4 * time.Minute,
 		BruteTimeout:            6 * time.Minute,
 		HTTPTimeout:             8 * time.Second,
+		SecurityTimeout:         12 * time.Minute,
 		DNSQueryTimeout:         2 * time.Second,
 		ResolverFetchTimeout:    35 * time.Second,
 		DNSThreads:              dnsThreads,
@@ -431,6 +433,9 @@ func (c *Config) Normalize() error {
 	}
 	if c.DNSRateLimit < 50 {
 		c.DNSRateLimit = 50
+	}
+	if c.SecurityTimeout < 2*time.Minute {
+		c.SecurityTimeout = 2 * time.Minute
 	}
 	if c.DNSConsensusMin < 1 {
 		c.DNSConsensusMin = 1

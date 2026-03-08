@@ -315,6 +315,7 @@ Resume from a specific previously checkpointed stage:
 - `--js-analysis`: analyze JavaScript files discovered during surface mapping
 - `--max-js-files`: cap JavaScript files fetched for analysis
 - `--max-js-discoveries`: cap URLs/endpoints retained from JavaScript analysis
+- `--security-timeout`: timeout per `nuclei` attempt during security checks
 
 ## Supported Module Names
 
