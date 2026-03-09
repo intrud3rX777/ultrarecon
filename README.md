@@ -24,7 +24,7 @@ Each phase can run independently or as part of a full pipeline.
 - Service discovery with `naabu`, `httpx`, and `tlsx`
 - Visual validation with screenshots for final live subdomains
 - URL and endpoint collection from crawlers and archive sources
-- JavaScript analysis for extra endpoints and in-scope hosts
+- JavaScript and source-map analysis for extra endpoints and in-scope hosts
 - Content discovery with `ffuf`
 - Automated security checks with `nuclei`
 - Clean final reports by default
@@ -316,6 +316,7 @@ Resume from a specific previously checkpointed stage:
 - `--max-js-files`: cap JavaScript files fetched for analysis
 - `--max-js-discoveries`: cap URLs/endpoints retained from JavaScript analysis
 - `--security-timeout`: timeout per `nuclei` attempt during security checks
+- `--security-batch-size`: targets per `nuclei` batch before splitting
 
 ## Supported Module Names
 

@@ -1,15 +1,21 @@
 package pipeline
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
 
 func TestCollectJSURLs(t *testing.T) {
 	rows := []SurfaceRow{
-		{URL: "https://app.example.com/app.js", Path: "/app.js"},
+		{URL: "https://app.example.com/vendor.js", Path: "/vendor.js"},
 		{URL: "https://app.example.com/app.js", Path: "/app.js"},
 		{URL: "https://app.example.com/main.css", Path: "/main.css"},
 	}
-	got := collectJSURLs(rows, 10)
-	if len(got) != 1 || got[0] != "https://app.example.com/app.js" {
+	got := collectJSURLs(rows, 2)
+	if len(got) != 2 || got[0] != "https://app.example.com/app.js" {
 		t.Fatalf("collectJSURLs() = %#v", got)
 	}
 }
@@ -70,5 +76,29 @@ func TestNormalizeJSBlob(t *testing.T) {
 	got := normalizeJSBlob(`{"a":"\/api\/v1","b":"\u002fauth","c":"\x2fgraphql"}`)
 	if got != `{"a":"/api/v1","b":"/auth","c":"/graphql"}` {
 		t.Fatalf("normalizeJSBlob() = %q", got)
+	}
+}
+
+func TestFetchSourceMapBlob(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app.js":
+			_, _ = w.Write([]byte(`console.log("ok"); //# sourceMappingURL=app.js.map`))
+		case "/app.js.map":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"sourcesContent":["const api = \"/api/v1/orders\";"]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	got, ok := fetchSourceMapBlob(context.Background(), client, srv.URL+"/app.js", `console.log("ok"); //# sourceMappingURL=app.js.map`)
+	if !ok {
+		t.Fatalf("fetchSourceMapBlob() ok = false")
+	}
+	if got != `const api = "/api/v1/orders";` {
+		t.Fatalf("fetchSourceMapBlob() = %q", got)
 	}
 }

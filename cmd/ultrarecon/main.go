@@ -122,6 +122,7 @@ func main() {
 	flag.IntVar(&cfg.ContentRate, "content-rate", cfg.ContentRate, "request rate for content discovery tools")
 	flag.BoolVar(&cfg.EnableSecurityChecks, "security-checks", cfg.EnableSecurityChecks, "enable phase-5 automated security checks")
 	flag.IntVar(&cfg.MaxSecurityTargets, "max-security-targets", cfg.MaxSecurityTargets, "max targets fed into automated security checks")
+	flag.IntVar(&cfg.SecurityBatchSize, "security-batch-size", cfg.SecurityBatchSize, "targets per nuclei batch before splitting")
 	flag.IntVar(&cfg.MaxSecurityFindings, "max-security-findings", cfg.MaxSecurityFindings, "max automated security findings retained")
 	flag.BoolVar(&cfg.EnableHTTPProbe, "http-probe", cfg.EnableHTTPProbe, "enable live http probing")
 	flag.BoolVar(&cfg.EnableScreenshots, "screenshots", cfg.EnableScreenshots, "capture screenshots for final live subdomains")
@@ -175,7 +176,7 @@ func main() {
 			cfg.EnableSurfaceMapping, cfg.EnableJSAnalysis, cfg.EnableContentDiscovery, cfg.EnableSecurityChecks, cfg.EnableHTTPProbe, cfg.EnableScreenshots)
 		fmt.Printf("[verbose] screenshots targets=%d concurrency=%d timeout=%s\n",
 			cfg.MaxScreenshotTargets, cfg.ScreenshotConcurrency, cfg.ScreenshotTimeout)
-		fmt.Printf("[verbose] content_rate=%d security_timeout=%s\n", cfg.ContentRate, cfg.SecurityTimeout)
+		fmt.Printf("[verbose] content_rate=%d security_timeout=%s security_batch_size=%d\n", cfg.ContentRate, cfg.SecurityTimeout, cfg.SecurityBatchSize)
 	}
 
 	if installTools {

@@ -38,15 +38,8 @@ func runSecurityChecks(
 		return nil
 	}
 
-	targetFile, cleanupTargets, err := writeTempList(cfg.OutputDir, "security-targets-*.txt", targets)
-	if err != nil {
-		*toolErrs = append(*toolErrs, ToolError{Stage: "security_checks", Tool: "internal", Error: err.Error()})
-		return nil
-	}
-	defer cleanupTargets()
-
 	logf("[security] running nuclei targets=%d", len(targets))
-	findings, runErr := runNucleiChecks(ctx, cfg, targetFile, logf)
+	findings, runErr := runNucleiChecks(ctx, cfg, targets, logf)
 	if runErr != nil {
 		*toolErrs = append(*toolErrs, ToolError{Stage: "security_checks", Tool: "nuclei", Error: runErr.Error()})
 		logf("[security] nuclei failed: %v", runErr)
@@ -65,11 +58,64 @@ func runSecurityChecks(
 	return findings
 }
 
-func runNucleiChecks(ctx context.Context, cfg config.Config, targetFile string, logf func(string, ...any)) ([]SecurityFinding, error) {
+func runNucleiChecks(ctx context.Context, cfg config.Config, targets []string, logf func(string, ...any)) ([]SecurityFinding, error) {
+	if len(targets) == 0 {
+		return nil, nil
+	}
+	batchSize := minInt(cfg.SecurityBatchSize, len(targets))
+	if batchSize < 1 {
+		batchSize = len(targets)
+	}
+	return runNucleiBatches(ctx, cfg, targets, batchSize, logf)
+}
+
+func runNucleiBatches(ctx context.Context, cfg config.Config, targets []string, batchSize int, logf func(string, ...any)) ([]SecurityFinding, error) {
+	if len(targets) == 0 {
+		return nil, nil
+	}
+	if batchSize < 1 {
+		batchSize = len(targets)
+	}
+	totalBatches := (len(targets) + batchSize - 1) / batchSize
+	allFindings := make([]SecurityFinding, 0, minInt(len(targets), cfg.MaxSecurityFindings))
+	var lastErr error
+	for start := 0; start < len(targets); start += batchSize {
+		end := minInt(start+batchSize, len(targets))
+		batch := append([]string(nil), targets[start:end]...)
+		if totalBatches > 1 {
+			logf("[security] batch=%d/%d size=%d", (start/batchSize)+1, totalBatches, len(batch))
+		}
+		findings, err := runNucleiBatch(ctx, cfg, batch, logf)
+		if isKilledProcessError(err) && len(batch) > 15 {
+			nextBatchSize := maxInt(10, len(batch)/2)
+			logf("[security] batch split size=%d -> %d", len(batch), nextBatchSize)
+			findings, err = runNucleiBatches(ctx, cfg, batch, nextBatchSize, logf)
+		}
+		allFindings = append(allFindings, findings...)
+		if err != nil {
+			lastErr = err
+		}
+		if cfg.MaxSecurityFindings > 0 && len(allFindings) >= cfg.MaxSecurityFindings {
+			return dedupeFindings(allFindings, cfg.MaxSecurityFindings), lastErr
+		}
+	}
+	return dedupeFindings(allFindings, cfg.MaxSecurityFindings), lastErr
+}
+
+func runNucleiBatch(ctx context.Context, cfg config.Config, batch []string, logf func(string, ...any)) ([]SecurityFinding, error) {
+	targetFile, cleanupTargets, err := writeTempList(cfg.OutputDir, "security-targets-*.txt", batch)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupTargets()
+
 	timeout := cfg.SecurityTimeout
 	if timeout <= 0 {
 		timeout = 12 * time.Minute
 	}
+	concurrency := minInt(maxInt(8, cfg.HTTPThreads/10), 20)
+	rate := minInt(maxInt(20, cfg.ContentRate/2), 60)
+	bulkSize := minInt(maxInt(8, concurrency/2), 16)
 	attempts := [][]string{
 		{
 			"-l", targetFile,
@@ -78,8 +124,9 @@ func runNucleiChecks(ctx context.Context, cfg config.Config, targetFile string, 
 			"-duc",
 			"-severity", "medium,high,critical",
 			"-tags", "takeover,cors,misconfig,exposure,panel,default-login,redirect,token,secret",
-			"-rate-limit", strconvI(maxInt(30, cfg.ContentRate)),
-			"-c", strconvI(minInt(cfg.HTTPThreads, 80)),
+			"-rate-limit", strconvI(rate),
+			"-c", strconvI(concurrency),
+			"-bs", strconvI(bulkSize),
 		},
 		{
 			"-l", targetFile,
@@ -87,19 +134,21 @@ func runNucleiChecks(ctx context.Context, cfg config.Config, targetFile string, 
 			"-jsonl",
 			"-duc",
 			"-severity", "medium,high,critical",
-			"-rate-limit", strconvI(maxInt(30, cfg.ContentRate)),
-			"-c", strconvI(minInt(cfg.HTTPThreads, 80)),
+			"-rate-limit", strconvI(rate),
+			"-c", strconvI(concurrency),
 		},
 		{
 			"-l", targetFile,
 			"-silent",
 			"-jsonl",
 			"-duc",
+			"-c", strconvI(concurrency),
 		},
 		{
 			"-l", targetFile,
 			"-silent",
 			"-jsonl",
+			"-c", strconvI(concurrency),
 		},
 	}
 
@@ -190,6 +239,14 @@ func summarizeToolFailure(err error, stderr string) error {
 		return fmt.Errorf("timeout exceeded")
 	}
 	return err
+}
+
+func isKilledProcessError(err error) bool {
+	if err == nil {
+		return false
+	}
+	low := strings.ToLower(err.Error())
+	return strings.Contains(low, "signal: killed") || strings.Contains(low, "killed")
 }
 
 func collectSecurityTargets(store *SafeStore, surface []SurfaceRow, content []ContentRow, limit int) []string {

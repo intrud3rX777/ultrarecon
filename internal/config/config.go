@@ -100,6 +100,7 @@ type Config struct {
 	MaxParamKeys            int
 	ContentRate             int
 	MaxSecurityTargets      int
+	SecurityBatchSize       int
 	MaxSecurityFindings     int
 	MaxScreenshotTargets    int
 	ScreenshotConcurrency   int
@@ -214,6 +215,7 @@ func Default() Config {
 		MaxParamKeys:            2000,
 		ContentRate:             220,
 		MaxSecurityTargets:      1200,
+		SecurityBatchSize:       75,
 		MaxSecurityFindings:     5000,
 		MaxScreenshotTargets:    120,
 		ScreenshotConcurrency:   4,
@@ -273,6 +275,7 @@ func (c *Config) ApplyProfile() {
 		c.MaxParamKeys = maxInt(c.MaxParamKeys, 3500)
 		c.ContentRate = maxInt(c.ContentRate, 500)
 		c.MaxSecurityTargets = maxInt(c.MaxSecurityTargets, 2200)
+		c.SecurityBatchSize = maxInt(c.SecurityBatchSize, 100)
 		c.MaxSecurityFindings = maxInt(c.MaxSecurityFindings, 9000)
 		c.MaxScreenshotTargets = maxInt(c.MaxScreenshotTargets, 240)
 		c.ScreenshotConcurrency = maxInt(c.ScreenshotConcurrency, 6)
@@ -319,6 +322,7 @@ func (c *Config) ApplyProfile() {
 		c.MaxParamKeys = minInt(c.MaxParamKeys, 1400)
 		c.ContentRate = minInt(c.ContentRate, 160)
 		c.MaxSecurityTargets = minInt(c.MaxSecurityTargets, 900)
+		c.SecurityBatchSize = minInt(c.SecurityBatchSize, 50)
 		c.MaxSecurityFindings = minInt(c.MaxSecurityFindings, 3000)
 		c.MaxScreenshotTargets = minInt(c.MaxScreenshotTargets, 100)
 		c.ScreenshotConcurrency = minInt(c.ScreenshotConcurrency, 3)
@@ -367,13 +371,14 @@ func (c *Config) ApplyProfile() {
 		c.MaxSurfaceInputs = minInt(c.MaxSurfaceInputs, 140)
 		c.MaxSurfaceURLs = minInt(c.MaxSurfaceURLs, 22000)
 		c.MaxSurfaceRows = minInt(c.MaxSurfaceRows, 15000)
-		c.MaxJSFiles = minInt(c.MaxJSFiles, 24)
-		c.MaxJSDiscoveries = minInt(c.MaxJSDiscoveries, 800)
+		c.MaxJSFiles = minInt(c.MaxJSFiles, 40)
+		c.MaxJSDiscoveries = minInt(c.MaxJSDiscoveries, 1500)
 		c.MaxContentHosts = minInt(c.MaxContentHosts, 24)
 		c.MaxContentRows = minInt(c.MaxContentRows, 2500)
 		c.MaxParamKeys = minInt(c.MaxParamKeys, 600)
 		c.ContentRate = minInt(c.ContentRate, 80)
 		c.MaxSecurityTargets = minInt(c.MaxSecurityTargets, 300)
+		c.SecurityBatchSize = minInt(c.SecurityBatchSize, 40)
 		c.MaxSecurityFindings = minInt(c.MaxSecurityFindings, 1200)
 		c.MaxScreenshotTargets = minInt(c.MaxScreenshotTargets, 60)
 		c.ScreenshotConcurrency = minInt(c.ScreenshotConcurrency, 2)
@@ -568,6 +573,9 @@ func (c *Config) Normalize() error {
 	}
 	if c.MaxSecurityTargets < 1 {
 		c.MaxSecurityTargets = 1
+	}
+	if c.SecurityBatchSize < 5 {
+		c.SecurityBatchSize = 5
 	}
 	if c.MaxSecurityFindings < 1 {
 		c.MaxSecurityFindings = 1

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
@@ -21,6 +22,7 @@ var (
 	jsQuotedPathRegex    = regexp.MustCompile("[\"'`]((?:/|\\./|\\.\\./)[A-Za-z0-9_./?&=%#:@~,+-]{2,})[\"'`]")
 	jsProtoRelativeRegex = regexp.MustCompile("[\"'`](//[A-Za-z0-9.-]+(?:/[A-Za-z0-9_./?&=%#:@~,+-]*)?)[\"'`]")
 	jsLoosePathRegex     = regexp.MustCompile("[\"'`]((?:api|graphql|graph|rest|auth|admin|oauth|v[0-9]+|assets|static|content|services?|uploads?|_next|wp-json)(?:/[A-Za-z0-9_./?&=%#:@~,+-]*)?)[\"'`]")
+	jsSourceMapRegex     = regexp.MustCompile(`(?m)sourceMappingURL=([^\s*]+)`)
 )
 
 type jsAnalysisResult struct {
@@ -124,7 +126,11 @@ func collectJSURLs(rows []SurfaceRow, limit int) []string {
 	if limit <= 0 {
 		return nil
 	}
-	out := make([]string, 0, minInt(limit, len(rows)))
+	type candidate struct {
+		URL   string
+		Score int
+	}
+	candidates := make([]candidate, 0, minInt(limit, len(rows)))
 	seen := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
 		if !isJavaScriptURL(row.URL, row.Path) {
@@ -134,12 +140,21 @@ func collectJSURLs(rows []SurfaceRow, limit int) []string {
 			continue
 		}
 		seen[row.URL] = struct{}{}
-		out = append(out, row.URL)
-		if len(out) >= limit {
-			break
-		}
+		candidates = append(candidates, candidate{URL: row.URL, Score: jsURLScore(row.URL, row.Path)})
 	}
-	sort.Strings(out)
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Score == candidates[j].Score {
+			return candidates[i].URL < candidates[j].URL
+		}
+		return candidates[i].Score > candidates[j].Score
+	})
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	out := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		out = append(out, candidate.URL)
+	}
 	return out
 }
 
@@ -176,6 +191,9 @@ func analyzeJSFile(ctx context.Context, client *http.Client, cfg config.Config, 
 		return row, nil
 	}
 	blob := normalizeJSBlob(string(body))
+	if sourceMapBlob, ok := fetchSourceMapBlob(ctx, client, target, blob); ok {
+		blob += "\n" + normalizeJSBlob(sourceMapBlob)
+	}
 	absURLs := util.UniqueSorted(extractURLsFromBlob(blob))
 	pathURLs := extractJSRelativeURLs(target, blob)
 	inScopeHosts := extractJSHosts(blob, cfg.Domain)
@@ -302,6 +320,91 @@ func normalizeJSBlob(blob string) string {
 	blob = strings.ReplaceAll(blob, `\u002f`, `/`)
 	blob = strings.ReplaceAll(blob, `\x2f`, `/`)
 	return blob
+}
+
+func jsURLScore(rawURL, path string) int {
+	score := 0
+	v := strings.ToLower(strings.TrimSpace(rawURL + " " + path))
+	positive := []string{"app", "main", "index", "bundle", "chunk", "runtime", "client", "_next", "webpack", "api", "graphql", "auth"}
+	negative := []string{"jquery", "bootstrap", "polyfill", "analytics", "gtm", "google", "cookie", "consent", "ads", "vendor"}
+	for _, token := range positive {
+		if strings.Contains(v, token) {
+			score += 3
+		}
+	}
+	for _, token := range negative {
+		if strings.Contains(v, token) {
+			score -= 2
+		}
+	}
+	if strings.Contains(v, ".min.js") {
+		score--
+	}
+	if strings.Contains(v, ".js") {
+		score++
+	}
+	return score
+}
+
+func fetchSourceMapBlob(ctx context.Context, client *http.Client, baseURL, blob string) (string, bool) {
+	m := jsSourceMapRegex.FindStringSubmatch(blob)
+	if len(m) < 2 {
+		return "", false
+	}
+	ref := strings.TrimSpace(m[1])
+	if ref == "" || strings.HasPrefix(ref, "data:") {
+		return "", false
+	}
+	base, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return "", false
+	}
+	u, err := url.Parse(ref)
+	if err != nil {
+		return "", false
+	}
+	sourceMapURL := base.ResolveReference(u).String()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceMapURL, nil)
+	if err != nil {
+		return "", false
+	}
+	req.Header.Set("User-Agent", "UltraRecon/1.0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", false
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
+	if err != nil {
+		return "", false
+	}
+	var obj struct {
+		SourcesContent []string `json:"sourcesContent"`
+	}
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return "", false
+	}
+	if len(obj.SourcesContent) == 0 {
+		return "", false
+	}
+	var b strings.Builder
+	for _, content := range obj.SourcesContent {
+		content = strings.TrimSpace(content)
+		if content == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(content)
+	}
+	if b.Len() == 0 {
+		return "", false
+	}
+	return b.String(), true
 }
 
 func surfaceURLsFromRows(rows []SurfaceRow, limit int) []string {

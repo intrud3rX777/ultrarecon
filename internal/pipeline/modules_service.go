@@ -303,15 +303,31 @@ func parseHTTPXServiceRow(raw, domain string) (ServiceRow, bool) {
 	}
 
 	row.Host = host
-	row.URL = serviceString(obj["url"])
-	row.Scheme = serviceString(obj["scheme"])
-	row.StatusCode = serviceInt(obj["status_code"])
-	row.Title = serviceString(obj["title"])
-	row.WebServer = serviceString(obj["webserver"])
-	row.Technologies = serviceStringSlice(obj["tech"])
+	row.URL = serviceString(serviceFirst(obj, "url", "matched", "matched-at"))
+	row.Scheme = serviceString(serviceFirst(obj, "scheme"))
+	row.StatusCode = serviceInt(serviceFirst(obj, "status_code", "status-code", "status"))
+	row.Title = serviceString(serviceFirst(obj, "title"))
+	row.WebServer = serviceString(serviceFirst(obj, "webserver", "web-server", "server"))
+	row.Technologies = serviceStringSlice(serviceFirst(obj, "tech", "technologies"))
 	row.Port = serviceInt(obj["port"])
-	row.CDN = serviceCDN(obj["cdn"])
-	row.ASN = serviceASN(obj["asn"])
+	row.CDN = serviceCDN(serviceFirst(obj, "cdn"))
+	row.ASN = serviceASN(serviceFirst(obj, "asn"))
+	if row.Port == 0 {
+		if parsed, err := url.Parse(strings.TrimSpace(row.URL)); err == nil {
+			if p := parsed.Port(); p != "" {
+				row.Port = serviceInt(p)
+			} else if parsed.Scheme == "https" {
+				row.Port = 443
+			} else if parsed.Scheme == "http" {
+				row.Port = 80
+			}
+		}
+	}
+	if row.Scheme == "" {
+		if parsed, err := url.Parse(strings.TrimSpace(row.URL)); err == nil {
+			row.Scheme = strings.ToLower(strings.TrimSpace(parsed.Scheme))
+		}
+	}
 	return row, true
 }
 
@@ -394,20 +410,49 @@ func flagError(stderr string) bool {
 }
 
 func extractServiceHost(raw, domain string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
 	if host, ok := util.NormalizeCandidate(raw, domain); ok {
 		return host
 	}
-	u, err := url.Parse(strings.TrimSpace(raw))
+	if host, _, ok := parseHostPortLine(raw); ok {
+		if norm, inScope := util.NormalizeCandidate(host, domain); inScope {
+			return norm
+		}
+	}
+	if !strings.Contains(raw, "://") && strings.Contains(raw, "/") {
+		raw = strings.SplitN(raw, "/", 2)[0]
+		if host, ok := util.NormalizeCandidate(raw, domain); ok {
+			return host
+		}
+		if host, _, ok := parseHostPortLine(raw); ok {
+			if norm, inScope := util.NormalizeCandidate(host, domain); inScope {
+				return norm
+			}
+		}
+	}
+	u, err := url.Parse(raw)
 	if err != nil {
 		return ""
 	}
-	if u.Host == "" {
+	if u.Hostname() == "" {
 		return ""
 	}
-	if host, ok := util.NormalizeCandidate(u.Host, domain); ok {
+	if host, ok := util.NormalizeCandidate(u.Hostname(), domain); ok {
 		return host
 	}
 	return ""
+}
+
+func serviceFirst(obj map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if v, ok := obj[key]; ok && v != nil {
+			return v
+		}
+	}
+	return nil
 }
 
 func serviceString(v any) string {
@@ -473,6 +518,9 @@ func serviceCDN(v any) string {
 }
 
 func serviceASN(v any) string {
+	if s, ok := v.(string); ok {
+		return strings.TrimSpace(s)
+	}
 	obj, ok := v.(map[string]any)
 	if !ok {
 		return ""
